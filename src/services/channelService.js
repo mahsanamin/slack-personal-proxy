@@ -3,10 +3,11 @@ const logger = require('../utils/logger');
 const { CACHE_PREFIXES } = require('../utils/constants');
 
 class ChannelService {
-  constructor(slackClient, cacheService, paginationService) {
+  constructor(slackClient, cacheService, paginationService, whitelistService) {
     this.slack = slackClient;
     this.cache = cacheService;
     this.pagination = paginationService;
+    this.whitelist = whitelistService;
   }
 
   async listChannels() {
@@ -18,7 +19,7 @@ class ChannelService {
     logger.info('Fetching all channels (paginated)');
     const result = await this.pagination.fetchAllChannels(this.slack);
 
-    const channels = result.items.map(ch => ({
+    let channels = result.items.map(ch => ({
       id: ch.id,
       name: ch.name,
       is_private: ch.is_private || false,
@@ -27,6 +28,9 @@ class ChannelService {
       purpose: ch.purpose || { value: '', creator: '' },
       topic: ch.topic || { value: '', creator: '' },
     }));
+
+    // Filter to only whitelisted channels
+    channels = channels.filter(ch => this.whitelist.canReadChannel(ch.id).allowed);
 
     const data = {
       channels,
@@ -40,6 +44,12 @@ class ChannelService {
   }
 
   async getChannelInfo(channelId) {
+    // Check whitelist before returning channel info
+    const readCheck = this.whitelist.canReadChannel(channelId);
+    if (!readCheck.allowed) {
+      throw readCheck.error;
+    }
+
     const cacheKey = CACHE_PREFIXES.CHANNEL_INFO + channelId;
     const cached = this.cache.get(cacheKey);
     if (cached) {

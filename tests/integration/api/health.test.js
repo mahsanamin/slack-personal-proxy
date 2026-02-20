@@ -26,7 +26,7 @@ jest.mock('../../../src/config', () => ({
   enableCaching: false,
   cache: { channelTtl: 300, userTtl: 300, threadTtl: 120, healthTtl: 300 },
   maxPaginationCalls: 10,
-  whitelist: { readChannels: [], writeChannels: [], dmUsers: [] },
+  whitelist: { readChannels: [], writeChannels: [], dmChannels: [], dmUsers: [] },
   enableWriteOps: false,
 }));
 
@@ -65,10 +65,10 @@ async function buildApp() {
   const whitelistService = new WhitelistService(slackClient, paginationService);
   await whitelistService.initialize();
 
-  const channelService = new ChannelService(slackClient, cacheService, paginationService);
+  const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService);
   const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService);
   const userService = new UserService(slackClient, cacheService, paginationService);
-  const searchService = new SearchService(slackClient, cacheService, messageService);
+  const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);
 
   const services = {
     slackClient, cacheService, paginationService, whitelistService,

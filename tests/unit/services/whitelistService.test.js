@@ -2,6 +2,7 @@ jest.mock('../../../src/config', () => ({
   whitelist: {
     readChannels: ['engineering', 'C12345'],
     writeChannels: ['bot-testing'],
+    dmChannels: ['D11111'],
     dmUsers: ['alice', 'U99999'],
   },
   maxPaginationCalls: 10,
@@ -84,6 +85,17 @@ describe('WhitelistService', () => {
     expect(result.allowed).toBe(false);
   });
 
+  test('canSendDm allows whitelisted DM channel', () => {
+    const result = whitelist.canSendDm('D11111');
+    expect(result.allowed).toBe(true);
+  });
+
+  test('canSendDm blocks non-whitelisted DM channel', () => {
+    const result = whitelist.canSendDm('D99999');
+    expect(result.allowed).toBe(false);
+    expect(result.error.code).toBe('USER_NOT_WHITELISTED');
+  });
+
   test('canSendDmToUser allows whitelisted user by ID', () => {
     const result = whitelist.canSendDmToUser('U99999');
     expect(result.allowed).toBe(true);
@@ -127,7 +139,7 @@ describe('WhitelistService (no whitelist configured)', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.doMock('../../../src/config', () => ({
-      whitelist: { readChannels: [], writeChannels: [], dmUsers: [] },
+      whitelist: { readChannels: [], writeChannels: [], dmChannels: [], dmUsers: [] },
       maxPaginationCalls: 10,
       logLevel: 'error',
       nodeEnv: 'test',
@@ -146,6 +158,7 @@ describe('WhitelistService (no whitelist configured)', () => {
     await whitelist.initialize();
     expect(whitelist.canReadChannel('C_ANY').allowed).toBe(true);
     expect(whitelist.canWriteChannel('C_ANY').allowed).toBe(true);
+    expect(whitelist.canSendDm('D_ANY').allowed).toBe(true);
     expect(whitelist.canSendDmToUser('U_ANY').allowed).toBe(true);
   });
 });

@@ -4,6 +4,7 @@ const channelRoutes = require('./channels');
 const userRoutes = require('./users');
 const searchRoutes = require('./search');
 const conversationRoutes = require('./conversations');
+const messageRoutes = require('./messages');
 const adminRoutes = require('./admin');
 
 const router = Router();
@@ -13,6 +14,7 @@ router.use('/channels', channelRoutes);
 router.use('/users', userRoutes);
 router.use('/search', searchRoutes);
 router.use('/conversations', conversationRoutes);
+router.use('/messages', messageRoutes);
 router.use('/admin', adminRoutes);
 
 module.exports = router;

@@ -1,10 +1,11 @@
 const logger = require('../utils/logger');
 
 class SearchService {
-  constructor(slackClient, cacheService, messageService) {
+  constructor(slackClient, cacheService, messageService, whitelistService) {
     this.slack = slackClient;
     this.cache = cacheService;
     this.messageService = messageService;
+    this.whitelist = whitelistService;
   }
 
   async searchMessages(query, count = 10, includeThreads = true, sortOrder = 'timestamp') {
@@ -20,8 +21,14 @@ class SearchService {
     const results = [];
 
     for (const match of searchResult.messages) {
+      // Filter out results from non-whitelisted channels
+      const channelId = match.channel?.id;
+      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) {
+        continue;
+      }
+
       const isInThread = !!(match.thread_ts && match.thread_ts !== match.ts);
-      const threadKey = `${match.channel?.id}:${match.thread_ts || match.ts}`;
+      const threadKey = `${channelId}:${match.thread_ts || match.ts}`;
 
       // Deduplicate: if multiple replies from the same thread matched, only include once
       if (isInThread && seenThreads.has(threadKey)) {
@@ -37,7 +44,7 @@ class SearchService {
           user: match.user || match.username,
           user_name: match.username || '',
           text: match.text,
-          channel_id: match.channel?.id,
+          channel_id: channelId,
           channel_name: match.channel?.name,
           permalink: match.permalink,
         },
@@ -46,10 +53,10 @@ class SearchService {
       };
 
       // Fetch thread context if requested and message is in a thread
-      if (includeThreads && isInThread && match.channel?.id && match.thread_ts) {
+      if (includeThreads && isInThread && channelId && match.thread_ts) {
         try {
           const threadData = await this.messageService.getCompleteThread(
-            match.channel.id, match.thread_ts
+            channelId, match.thread_ts
           );
           apiCalls += threadData.api_calls_made || 0;
 

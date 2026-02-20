@@ -1,4 +1,4 @@
-const { query, param, validationResult } = require('express-validator');
+const { query, param, body, validationResult } = require('express-validator');
 const { formatErrorResponse } = require('../utils/helpers');
 const { ERROR_CODES } = require('../utils/constants');
 
@@ -49,6 +49,17 @@ function handleValidationErrors(req, res, next) {
   next();
 }
 
+const validateMessageText = body('text')
+  .notEmpty()
+  .withMessage('Message text is required.')
+  .isLength({ min: 1, max: 40000 })
+  .withMessage('Message text must be between 1 and 40000 characters.');
+
+const validateThreadTs = body('thread_ts')
+  .optional()
+  .matches(TIMESTAMP_REGEX)
+  .withMessage('Invalid thread_ts format. Expected format: 1234567890.123456');
+
 module.exports = {
   validateChannelId,
   validateCount,
@@ -56,5 +67,7 @@ module.exports = {
   validateTimestamp,
   validateSearchQuery,
   validateSortOrder,
+  validateMessageText,
+  validateThreadTs,
   handleValidationErrors,
 };

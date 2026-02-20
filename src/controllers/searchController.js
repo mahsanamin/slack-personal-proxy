@@ -12,7 +12,7 @@ async function searchMessages(req, res, next) {
 
     res.json(formatSuccessResponse(
       { results: result.results, total_matches: result.total_matches },
-      { query: result.query, searched_channels: 'all', api_calls_made: result.api_calls_made }
+      { query: result.query, searched_channels: 'whitelisted_only', api_calls_made: result.api_calls_made }
     ));
   } catch (err) {
     next(err);

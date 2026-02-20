@@ -115,10 +115,10 @@ async function start() {
     await whitelistService.initialize();
 
     // Build higher-level services
-    const channelService = new ChannelService(slackClient, cacheService, paginationService);
+    const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService);
     const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService);
     const userService = new UserService(slackClient, cacheService, paginationService);
-    const searchService = new SearchService(slackClient, cacheService, messageService);
+    const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);
 
     services = {
       slackClient,

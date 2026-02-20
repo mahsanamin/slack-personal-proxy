@@ -166,6 +166,28 @@ class MessageService {
     return { ...threadData, cached: false };
   }
 
+  async sendMessage(channelId, text, threadTs = null) {
+    // DM channels (D-prefix) check DM whitelist, regular channels check write whitelist
+    const isDm = channelId.startsWith('D');
+    const writeCheck = isDm
+      ? this.whitelist.canSendDm(channelId)
+      : this.whitelist.canWriteChannel(channelId);
+    if (!writeCheck.allowed) {
+      throw writeCheck.error;
+    }
+
+    logger.info(`Sending message to ${channelId}${threadTs ? ` (thread: ${threadTs})` : ''}`);
+
+    const result = await this.slack.postMessage(channelId, text, threadTs);
+
+    return {
+      ok: result.ok,
+      channel: result.channel,
+      ts: result.ts,
+      message: result.message,
+    };
+  }
+
   async getUserName(userId) {
     if (!userId) return 'Unknown';
 

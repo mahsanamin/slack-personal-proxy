@@ -52,6 +52,7 @@ const config = Object.freeze({
   whitelist: Object.freeze({
     readChannels: parseList(process.env.ALLOWED_READ_CHANNELS),
     writeChannels: parseList(process.env.ALLOWED_WRITE_CHANNELS),
+    dmChannels: parseList(process.env.ALLOWED_DM_CHANNELS),
     dmUsers: parseList(process.env.ALLOWED_DM_USERS),
   }),
 

@@ -20,16 +20,18 @@ class WhitelistService {
     // Parsed whitelist entries
     this.readChannelEntries = config.whitelist.readChannels;
     this.writeChannelEntries = config.whitelist.writeChannels;
+    this.dmChannelEntries = config.whitelist.dmChannels;
     this.dmUserEntries = config.whitelist.dmUsers;
 
     // Resolved ID sets (populated after initialize)
     this.readChannelIds = new Set();
     this.writeChannelIds = new Set();
+    this.dmChannelIds = new Set();
     this.dmUserIds = new Set();
 
     this.enforceRead = this.readChannelEntries.length > 0;
     this.enforceWrite = this.writeChannelEntries.length > 0;
-    this.enforceDm = this.dmUserEntries.length > 0;
+    this.enforceDm = this.dmChannelEntries.length > 0 || this.dmUserEntries.length > 0;
   }
 
   async initialize() {
@@ -37,7 +39,7 @@ class WhitelistService {
     if (this.enforceRead || this.enforceWrite) {
       await this._resolveChannels();
     }
-    if (this.enforceDm) {
+    if (this.dmUserEntries.length > 0) {
       await this._resolveUsers();
     }
 
@@ -52,6 +54,10 @@ class WhitelistService {
       if (id) this.writeChannelIds.add(id);
       else logger.warn(`Could not resolve write channel: ${entry}`);
     }
+    // DM channel IDs are used directly (D-prefix)
+    for (const entry of this.dmChannelEntries) {
+      this.dmChannelIds.add(entry);
+    }
     for (const entry of this.dmUserEntries) {
       const id = this._resolveUserEntry(entry);
       if (id) this.dmUserIds.add(id);
@@ -60,7 +66,8 @@ class WhitelistService {
 
     logger.info(
       `Whitelist initialized: read=${this.readChannelIds.size} channels, ` +
-      `write=${this.writeChannelIds.size} channels, dm=${this.dmUserIds.size} users`
+      `write=${this.writeChannelIds.size} channels, ` +
+      `dm=${this.dmChannelIds.size} channels/${this.dmUserIds.size} users`
     );
   }
 
@@ -124,6 +131,21 @@ class WhitelistService {
     };
   }
 
+  canSendDm(dmChannelId) {
+    if (!this.enforceDm) return { allowed: true };
+    if (this.dmChannelIds.has(dmChannelId)) return { allowed: true };
+    return {
+      allowed: false,
+      error: {
+        ...ERROR_CODES.USER_NOT_WHITELISTED,
+        details: {
+          dm_channel: dmChannelId,
+          whitelisted_dm_channels: [...this.dmChannelIds],
+        },
+      },
+    };
+  }
+
   canSendDmToUser(userIdOrName) {
     if (!this.enforceDm) return { allowed: true };
     // Check by ID directly
@@ -167,8 +189,13 @@ class WhitelistService {
         count: this.writeChannelIds.size,
         channels: this.writeChannelEntries,
       },
+      dm_channels: {
+        configured: this.dmChannelEntries.length > 0,
+        count: this.dmChannelIds.size,
+        channels: this.dmChannelEntries,
+      },
       dm_users: {
-        configured: this.enforceDm,
+        configured: this.dmUserEntries.length > 0,
         count: this.dmUserIds.size,
         users: this.dmUserEntries,
       },
