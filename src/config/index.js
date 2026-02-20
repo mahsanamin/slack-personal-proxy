@@ -61,6 +61,11 @@ const config = Object.freeze({
 
   // Swagger docs
   enableSwagger: parseBoolean(process.env.ENABLE_SWAGGER, true),
+
+  // HTTPS
+  enableHttps: parseBoolean(process.env.ENABLE_HTTPS, false),
+  httpsKeyPath: process.env.HTTPS_KEY_PATH || '/app/certs/server.key',
+  httpsCertPath: process.env.HTTPS_CERT_PATH || '/app/certs/server.cert',
 });
 
 module.exports = config;

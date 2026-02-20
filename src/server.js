@@ -1,5 +1,7 @@
 require('dotenv').config();
 
+const fs = require('fs');
+const https = require('https');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -150,9 +152,19 @@ async function start() {
       searchService,
     };
 
-    const server = app.listen(config.port, () => {
-      logger.info(`Server listening on port ${config.port} (${config.nodeEnv})`);
-    });
+    let server;
+    if (config.enableHttps) {
+      const key = fs.readFileSync(config.httpsKeyPath);
+      const cert = fs.readFileSync(config.httpsCertPath);
+      server = https.createServer({ key, cert }, app);
+      server.listen(config.port, () => {
+        logger.info(`Server listening on HTTPS port ${config.port} (${config.nodeEnv})`);
+      });
+    } else {
+      server = app.listen(config.port, () => {
+        logger.info(`Server listening on port ${config.port} (${config.nodeEnv})`);
+      });
+    }
 
     // Graceful shutdown
     const shutdown = (signal) => {
