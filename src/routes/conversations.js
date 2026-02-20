@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getThread } = require('../controllers/conversationController');
+const { getThread, getContext } = require('../controllers/conversationController');
 const { validateChannelId, validateTimestamp, handleValidationErrors } = require('../middleware/validator');
 
 const router = Router();
@@ -35,6 +35,50 @@ router.get('/:channelId/thread/:threadTs',
   validateTimestamp,
   handleValidationErrors,
   getThread
+);
+
+/**
+ * @swagger
+ * /api/conversations/{channelId}/context:
+ *   get:
+ *     summary: Get conversation context around a specific message
+ *     tags: [Conversations]
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: channelId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: messageTs
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Target message timestamp
+ *       - in: query
+ *         name: before
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: Messages before target (max 10)
+ *       - in: query
+ *         name: after
+ *         schema:
+ *           type: integer
+ *           default: 5
+ *         description: Messages after target (max 10)
+ *     responses:
+ *       200:
+ *         description: Messages surrounding the target with optional thread context
+ *       403:
+ *         description: Channel not whitelisted
+ */
+router.get('/:channelId/context',
+  validateChannelId,
+  handleValidationErrors,
+  getContext
 );
 
 module.exports = router;

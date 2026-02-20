@@ -26,6 +26,8 @@ const ChannelService = require('./services/channelService');
 const MessageService = require('./services/messageService');
 const UserService = require('./services/userService');
 const SearchService = require('./services/searchService');
+const MentionService = require('./services/mentionService');
+const ActivityService = require('./services/activityService');
 
 const app = express();
 
@@ -140,6 +142,8 @@ async function start() {
     const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService);
     const userService = new UserService(slackClient, cacheService, paginationService);
     const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);
+    const mentionService = new MentionService(slackClient, cacheService, messageService, whitelistService);
+    const activityService = new ActivityService(slackClient, cacheService, messageService, whitelistService);
 
     services = {
       slackClient,
@@ -150,6 +154,8 @@ async function start() {
       messageService,
       userService,
       searchService,
+      mentionService,
+      activityService,
     };
 
     let server;

@@ -5,6 +5,8 @@ const userRoutes = require('./users');
 const searchRoutes = require('./search');
 const conversationRoutes = require('./conversations');
 const messageRoutes = require('./messages');
+const mentionRoutes = require('./mentions');
+const activityRoutes = require('./activity');
 const adminRoutes = require('./admin');
 
 const router = Router();
@@ -15,6 +17,8 @@ router.use('/users', userRoutes);
 router.use('/search', searchRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/messages', messageRoutes);
+router.use('/mentions', mentionRoutes);
+router.use('/activity', activityRoutes);
 router.use('/admin', adminRoutes);
 
 module.exports = router;

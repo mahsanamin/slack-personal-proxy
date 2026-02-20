@@ -93,9 +93,15 @@ All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.en
 | GET | `/api/channels/:id/info` | Channel details (whitelisted only) |
 | GET | `/api/channels/:id/recent-messages?count=5&includeThreads=true` | Messages with threads |
 | GET | `/api/conversations/:channelId/thread/:threadTs` | Complete thread |
+| GET | `/api/conversations/:channelId/context?messageTs=...&before=5&after=5` | Context around a message |
 | GET | `/api/users` | List users |
 | GET | `/api/users/:id/profile` | User profile |
 | GET | `/api/search/messages?query=...&count=10` | Search (whitelisted channels only) |
+| GET | `/api/mentions/all?count=20&includeThreads=true` | All your mentions |
+| GET | `/api/mentions/threads?count=20` | Threads where you're mentioned |
+| GET | `/api/mentions/by-channel/:channelId?count=20` | Mentions in a specific channel |
+| GET | `/api/activity/threads-im-in?count=20` | Threads you participated in |
+| GET | `/api/activity/my-threads?count=20&includeReplies=true` | Threads you started |
 | POST | `/api/messages/:channelId/send` | Send message (write-whitelisted only) |
 | GET | `/api/admin/whitelist-status` | Whitelist config |
 
