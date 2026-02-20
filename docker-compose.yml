@@ -4,7 +4,7 @@ services:
     container_name: slack-personal-proxy
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8282:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-8282}:3000"
     env_file:
       - .env
     read_only: true

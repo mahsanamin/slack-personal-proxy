@@ -58,6 +58,9 @@ const config = Object.freeze({
 
   // Write operations
   enableWriteOps: parseBoolean(process.env.ENABLE_WRITE_OPS, false),
+
+  // Swagger docs
+  enableSwagger: parseBoolean(process.env.ENABLE_SWAGGER, true),
 });
 
 module.exports = config;

@@ -28,7 +28,24 @@ const SearchService = require('./services/searchService');
 const app = express();
 
 // Security & parsing
-app.use(helmet());
+// Helmet with relaxed CSP for Swagger UI (needs inline scripts/styles)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/docs')) {
+    return helmet({
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:"],
+          fontSrc: ["'self'", "data:"],
+        },
+      },
+    })(req, res, next);
+  }
+  return helmet()(req, res, next);
+});
 app.use(cors());
 app.use(express.json());
 app.use(rateLimiter);
@@ -42,11 +59,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// Swagger docs (no auth required)
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customSiteTitle: 'Slack Personal Proxy - API Docs',
-}));
-app.get('/docs.json', (req, res) => res.json(swaggerSpec));
+// Swagger docs (no auth required, configurable)
+if (config.enableSwagger) {
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: 'Slack Personal Proxy - API Docs',
+  }));
+  app.get('/docs.json', (req, res) => res.json(swaggerSpec));
+}
 
 // Health endpoint (no auth required)
 app.get('/health', async (req, res) => {
