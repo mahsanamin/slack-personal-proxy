@@ -1,0 +1,62 @@
+require('dotenv').config();
+
+function parseBoolean(value, defaultValue = false) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  return value === 'true' || value === '1';
+}
+
+function parseInt_(value, defaultValue) {
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
+
+function parseList(value) {
+  if (!value || value.trim() === '') return [];
+  return value.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+const config = Object.freeze({
+  port: parseInt_(process.env.PORT, 3000),
+  nodeEnv: process.env.NODE_ENV || 'development',
+  logLevel: process.env.LOG_LEVEL || 'info',
+
+  // Slack credentials
+  slack: Object.freeze({
+    botToken: process.env.SLACK_BOT_TOKEN || '',
+    cookie: process.env.SLACK_COOKIE || '',
+    token: process.env.SLACK_TOKEN || '',
+  }),
+
+  // API security
+  apiKey: process.env.API_KEY || '',
+
+  // Rate limiting
+  rateLimit: Object.freeze({
+    windowMs: parseInt_(process.env.RATE_LIMIT_WINDOW_MS, 60000),
+    maxRequests: parseInt_(process.env.RATE_LIMIT_MAX_REQUESTS, 30),
+  }),
+
+  // Caching
+  enableCaching: parseBoolean(process.env.ENABLE_CACHING, true),
+  cache: Object.freeze({
+    channelTtl: parseInt_(process.env.CHANNEL_CACHE_TTL_SECONDS, 300),
+    userTtl: parseInt_(process.env.USER_CACHE_TTL_SECONDS, 300),
+    threadTtl: parseInt_(process.env.THREAD_CACHE_TTL_SECONDS, 120),
+    healthTtl: parseInt_(process.env.HEALTH_CACHE_TTL_SECONDS, 300),
+  }),
+
+  // Pagination
+  maxPaginationCalls: parseInt_(process.env.MAX_PAGINATION_CALLS, 10),
+
+  // Whitelist
+  whitelist: Object.freeze({
+    readChannels: parseList(process.env.ALLOWED_READ_CHANNELS),
+    writeChannels: parseList(process.env.ALLOWED_WRITE_CHANNELS),
+    dmUsers: parseList(process.env.ALLOWED_DM_USERS),
+  }),
+
+  // Write operations
+  enableWriteOps: parseBoolean(process.env.ENABLE_WRITE_OPS, false),
+});
+
+module.exports = config;
