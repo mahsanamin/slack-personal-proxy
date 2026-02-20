@@ -17,6 +17,9 @@ coverage/
 # Certificates (NEVER commit private keys)
 certs/
 
+# Prompt/spec files
+prompt.md
+
 # OS files
 .DS_Store
 Thumbs.db
