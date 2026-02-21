@@ -17,10 +17,15 @@ class SearchService {
     const searchResult = await this.slack.searchMessages(query, count, 1, sort, sortDir);
 
     let apiCalls = 1;
+
+    // Enrich with thread metadata that search API doesn't provide
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    apiCalls += enrichResult.apiCalls;
+
     const seenThreads = new Set();
     const results = [];
 
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const channelId = match.channel?.id;
       const isInThread = !!(match.thread_ts && match.thread_ts !== match.ts);
       const threadKey = `${channelId}:${match.thread_ts || match.ts}`;

@@ -60,6 +60,16 @@ class SlackClient {
     };
   }
 
+  async getMessage(channelId, ts) {
+    const result = await this.client.conversations.history({
+      channel: channelId,
+      latest: ts,
+      inclusive: true,
+      limit: 1,
+    });
+    return result.messages?.[0] || null;
+  }
+
   async getThreadReplies(channelId, threadTs, limit = 100, cursor = null, oldest = null) {
     const params = { channel: channelId, ts: threadTs, limit };
     if (cursor) params.cursor = cursor;
@@ -71,6 +81,43 @@ class SlackClient {
       has_more: result.has_more || false,
       next_cursor: result.response_metadata?.next_cursor || null,
     };
+  }
+
+  /**
+   * Enrich search matches with thread_ts (parsed from permalink — no API calls)
+   * and optionally reply_count (requires API call per thread parent).
+   * The Slack search API omits these fields from results.
+   * Returns { matches, apiCalls }.
+   */
+  async enrichSearchMatches(matches, { fetchReplyCounts = false } = {}) {
+    let apiCalls = 0;
+    const enriched = await Promise.all(
+      matches.map(async (match) => {
+        // Extract thread_ts from permalink (e.g. ?thread_ts=1234.5678)
+        const threadTsMatch = match.permalink?.match(/thread_ts=([0-9.]+)/);
+        const threadTs = threadTsMatch ? threadTsMatch[1] : null;
+        const enrichedMatch = { ...match, thread_ts: threadTs, reply_count: 0 };
+
+        // For thread parents, optionally fetch reply_count via API
+        if (fetchReplyCounts && threadTs && threadTs === match.ts) {
+          const channelId = match.channel?.id;
+          if (channelId) {
+            try {
+              const msg = await this.getMessage(channelId, match.ts);
+              apiCalls++;
+              if (msg && msg.ts === match.ts) {
+                enrichedMatch.reply_count = msg.reply_count || 0;
+              }
+            } catch (err) {
+              // Skip — reply_count stays 0
+            }
+          }
+        }
+
+        return enrichedMatch;
+      })
+    );
+    return { matches: enriched, apiCalls };
   }
 
   async searchMessages(query, count = 20, page = 1, sort = 'timestamp', sortDir = 'desc') {

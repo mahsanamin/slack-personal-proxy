@@ -17,10 +17,14 @@ class MentionService {
     const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
     let apiCalls = 1;
 
+    // Enrich with thread metadata that search API doesn't provide
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    apiCalls += enrichResult.apiCalls;
+
     const mentions = [];
     const channelCounts = {};
 
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const channelId = match.channel?.id;
       const isThreadReply = !!(match.thread_ts && match.thread_ts !== match.ts);
       const channelName = match.channel?.name || 'unknown';
@@ -80,9 +84,13 @@ class MentionService {
     const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
     let apiCalls = 1;
 
+    // Enrich with thread metadata that search API doesn't provide
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    apiCalls += enrichResult.apiCalls;
+
     const seenThreads = new Map();
 
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const channelId = match.channel?.id;
       const threadTs = match.thread_ts || match.ts;
       const threadKey = `${channelId}:${threadTs}`;
@@ -153,15 +161,26 @@ class MentionService {
 
   async getMentionsByChannel(channelId, count = 20, includeThreads = true) {
     const userId = this.slack.currentUserId;
-    const query = `<@${userId}> in:${this.whitelist.channelIdToName.get(channelId) || channelId}`;
+
+    // Resolve channel name for Slack's in: search modifier (requires name, not ID)
+    let channelName = this.whitelist.channelIdToName.get(channelId);
+    if (!channelName) {
+      const info = await this.slack.getChannelInfo(channelId);
+      channelName = info.name;
+    }
+    const query = `<@${userId}> in:${channelName}`;
 
     logger.info(`Fetching mentions in ${channelId} for ${userId}`);
 
     const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
     let apiCalls = 1;
 
+    // Enrich with thread metadata that search API doesn't provide
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    apiCalls += enrichResult.apiCalls;
+
     const mentions = [];
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const isThreadReply = !!(match.thread_ts && match.thread_ts !== match.ts);
 
       const mention = {

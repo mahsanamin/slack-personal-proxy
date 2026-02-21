@@ -10,16 +10,22 @@ class ActivityService {
 
   async getThreadsImIn(count = 20) {
     const userId = this.slack.currentUserId;
-    const query = `from:<@${userId}>`;
+    const query = 'from:me';
 
     logger.info(`Fetching threads participated in by ${userId} (count=${count})`);
 
-    const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
+    // Fetch generously — most results are non-thread messages that get filtered out
+    const searchCount = 100;
+    const searchResult = await this.slack.searchMessages(query, searchCount, 1, 'timestamp', 'desc');
     let apiCalls = 1;
+
+    // Enrich with thread metadata (parsed from permalinks, no API calls)
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Map();
 
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const channelId = match.channel?.id;
 
       // Only include thread replies (not top-level messages)
@@ -39,6 +45,8 @@ class ActivityService {
         ts: match.ts,
         text: match.text,
       });
+
+      if (seenThreads.size >= count) break;
     }
 
     const threads = [];
@@ -94,16 +102,22 @@ class ActivityService {
 
   async getMyThreads(count = 20, includeReplies = true) {
     const userId = this.slack.currentUserId;
-    const query = `from:<@${userId}>`;
+    const query = 'from:me';
 
     logger.info(`Fetching threads started by ${userId} (count=${count})`);
 
-    const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
+    // Fetch generously — most results are non-thread messages that get filtered out
+    const searchCount = 100;
+    const searchResult = await this.slack.searchMessages(query, searchCount, 1, 'timestamp', 'desc');
     let apiCalls = 1;
+
+    // Enrich with thread metadata; fetch reply_count for thread parents
+    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages, { fetchReplyCounts: true });
+    apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Map();
 
-    for (const match of searchResult.messages) {
+    for (const match of enrichResult.matches) {
       const channelId = match.channel?.id;
 
       // Only include parent messages (threads you started)
@@ -120,6 +134,8 @@ class ActivityService {
         parent_text: match.text,
         reply_count: match.reply_count,
       });
+
+      if (seenThreads.size >= count) break;
     }
 
     const threads = [];
