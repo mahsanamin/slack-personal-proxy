@@ -21,7 +21,6 @@ class ActivityService {
 
     for (const match of searchResult.messages) {
       const channelId = match.channel?.id;
-      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) continue;
 
       // Only include thread replies (not top-level messages)
       if (!match.thread_ts || match.thread_ts === match.ts) continue;
@@ -106,7 +105,6 @@ class ActivityService {
 
     for (const match of searchResult.messages) {
       const channelId = match.channel?.id;
-      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) continue;
 
       // Only include parent messages (threads you started)
       if (match.thread_ts && match.thread_ts !== match.ts) continue;

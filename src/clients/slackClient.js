@@ -47,9 +47,10 @@ class SlackClient {
     return result;
   }
 
-  async getConversationHistory(channelId, limit = 100, cursor = null) {
+  async getConversationHistory(channelId, limit = 100, cursor = null, oldest = null) {
     const params = { channel: channelId, limit };
     if (cursor) params.cursor = cursor;
+    if (oldest) params.oldest = oldest;
 
     const result = await this.client.conversations.history(params);
     return {
@@ -59,9 +60,10 @@ class SlackClient {
     };
   }
 
-  async getThreadReplies(channelId, threadTs, limit = 100, cursor = null) {
+  async getThreadReplies(channelId, threadTs, limit = 100, cursor = null, oldest = null) {
     const params = { channel: channelId, ts: threadTs, limit };
     if (cursor) params.cursor = cursor;
+    if (oldest) params.oldest = oldest;
 
     const result = await this.client.conversations.replies(params);
     return {

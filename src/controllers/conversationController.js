@@ -27,15 +27,11 @@ async function getThread(req, res, next) {
 
 async function getContext(req, res, next) {
   try {
-    const { messageService, whitelistService } = req.services;
+    const { messageService } = req.services;
     const { channelId } = req.params;
     const { messageTs } = req.query;
     const before = Math.min(parseInt(req.query.before, 10) || 5, 10);
     const after = Math.min(parseInt(req.query.after, 10) || 5, 10);
-
-    // Check whitelist
-    const readCheck = whitelistService.canReadChannel(channelId);
-    if (!readCheck.allowed) throw readCheck.error;
 
     const slackClient = req.services.slackClient;
     let apiCalls = 0;

@@ -18,25 +18,20 @@ class WhitelistService {
     this.userIdToName = new Map();
 
     // Parsed whitelist entries
-    this.readChannelEntries = config.whitelist.readChannels;
     this.writeChannelEntries = config.whitelist.writeChannels;
-    this.dmChannelEntries = config.whitelist.dmChannels;
     this.dmUserEntries = config.whitelist.dmUsers;
 
     // Resolved ID sets (populated after initialize)
-    this.readChannelIds = new Set();
     this.writeChannelIds = new Set();
-    this.dmChannelIds = new Set();
     this.dmUserIds = new Set();
 
-    this.enforceRead = this.readChannelEntries.length > 0;
     this.enforceWrite = this.writeChannelEntries.length > 0;
-    this.enforceDm = this.dmChannelEntries.length > 0 || this.dmUserEntries.length > 0;
+    this.enforceDm = this.dmUserEntries.length > 0;
   }
 
   async initialize() {
     // Build lookup maps using full pagination
-    if (this.enforceRead || this.enforceWrite) {
+    if (this.enforceWrite) {
       await this._resolveChannels();
     }
     if (this.dmUserEntries.length > 0) {
@@ -44,19 +39,10 @@ class WhitelistService {
     }
 
     // Resolve whitelist entries to IDs
-    for (const entry of this.readChannelEntries) {
-      const id = this._resolveChannelEntry(entry);
-      if (id) this.readChannelIds.add(id);
-      else logger.warn(`Could not resolve read channel: ${entry}`);
-    }
     for (const entry of this.writeChannelEntries) {
       const id = this._resolveChannelEntry(entry);
       if (id) this.writeChannelIds.add(id);
       else logger.warn(`Could not resolve write channel: ${entry}`);
-    }
-    // DM channel IDs are used directly (D-prefix)
-    for (const entry of this.dmChannelEntries) {
-      this.dmChannelIds.add(entry);
     }
     for (const entry of this.dmUserEntries) {
       const id = this._resolveUserEntry(entry);
@@ -65,9 +51,8 @@ class WhitelistService {
     }
 
     logger.info(
-      `Whitelist initialized: read=${this.readChannelIds.size} channels, ` +
-      `write=${this.writeChannelIds.size} channels, ` +
-      `dm=${this.dmChannelIds.size} channels/${this.dmUserIds.size} users`
+      `Whitelist initialized: write=${this.writeChannelIds.size} channels, ` +
+      `dm=${this.dmUserIds.size} users`
     );
   }
 
@@ -101,21 +86,6 @@ class WhitelistService {
     return this.userNameToId.get(entry) || null;
   }
 
-  canReadChannel(channelId) {
-    if (!this.enforceRead) return { allowed: true };
-    if (this.readChannelIds.has(channelId)) return { allowed: true };
-    return {
-      allowed: false,
-      error: {
-        ...ERROR_CODES.CHANNEL_NOT_WHITELISTED,
-        details: {
-          channel: channelId,
-          whitelisted_channels: [...this.readChannelIds],
-        },
-      },
-    };
-  }
-
   canWriteChannel(channelId) {
     if (!this.enforceWrite) return { allowed: true };
     if (this.writeChannelIds.has(channelId)) return { allowed: true };
@@ -126,21 +96,6 @@ class WhitelistService {
         details: {
           channel: channelId,
           whitelisted_channels: [...this.writeChannelIds],
-        },
-      },
-    };
-  }
-
-  canSendDm(dmChannelId) {
-    if (!this.enforceDm) return { allowed: true };
-    if (this.dmChannelIds.has(dmChannelId)) return { allowed: true };
-    return {
-      allowed: false,
-      error: {
-        ...ERROR_CODES.USER_NOT_WHITELISTED,
-        details: {
-          dm_channel: dmChannelId,
-          whitelisted_dm_channels: [...this.dmChannelIds],
         },
       },
     };
@@ -178,21 +133,11 @@ class WhitelistService {
 
   getStatus() {
     return {
-      enforce: this.enforceRead || this.enforceWrite || this.enforceDm,
-      read_channels: {
-        configured: this.enforceRead,
-        count: this.readChannelIds.size,
-        channels: this.readChannelEntries,
-      },
+      enforce: this.enforceWrite || this.enforceDm,
       write_channels: {
         configured: this.enforceWrite,
         count: this.writeChannelIds.size,
         channels: this.writeChannelEntries,
-      },
-      dm_channels: {
-        configured: this.dmChannelEntries.length > 0,
-        count: this.dmChannelIds.size,
-        channels: this.dmChannelEntries,
       },
       dm_users: {
         configured: this.dmUserEntries.length > 0,

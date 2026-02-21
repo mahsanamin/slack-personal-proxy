@@ -10,7 +10,8 @@ RUN npm ci --omit=dev
 COPY src/ ./src/
 
 RUN addgroup -g 1001 appgroup && \
-    adduser -u 1001 -G appgroup -s /bin/sh -D appuser
+    adduser -u 1001 -G appgroup -s /bin/sh -D appuser && \
+    mkdir -p /app/data && chown 1001:1001 /app/data
 USER appuser
 
 EXPOSE 3000

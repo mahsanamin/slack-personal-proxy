@@ -29,9 +29,6 @@ class ChannelService {
       topic: ch.topic || { value: '', creator: '' },
     }));
 
-    // Filter to only whitelisted channels
-    channels = channels.filter(ch => this.whitelist.canReadChannel(ch.id).allowed);
-
     const data = {
       channels,
       total_count: channels.length,
@@ -44,12 +41,6 @@ class ChannelService {
   }
 
   async getChannelInfo(channelId) {
-    // Check whitelist before returning channel info
-    const readCheck = this.whitelist.canReadChannel(channelId);
-    if (!readCheck.allowed) {
-      throw readCheck.error;
-    }
-
     const cacheKey = CACHE_PREFIXES.CHANNEL_INFO + channelId;
     const cached = this.cache.get(cacheKey);
     if (cached) {

@@ -11,4 +11,18 @@ async function getWhitelistStatus(req, res, next) {
   }
 }
 
-module.exports = { getWhitelistStatus };
+async function getCacheStats(req, res, next) {
+  try {
+    const { persistentCacheService, cacheService } = req.services;
+    const stats = {
+      memory_cache: cacheService.getStats ? cacheService.getStats() : { status: 'no stats method' },
+      persistent_cache: persistentCacheService ? persistentCacheService.getStats() : { enabled: false },
+    };
+
+    res.json(formatSuccessResponse(stats));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getWhitelistStatus, getCacheStats };

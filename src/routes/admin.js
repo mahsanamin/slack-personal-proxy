@@ -1,5 +1,5 @@
 const { Router } = require('express');
-const { getWhitelistStatus } = require('../controllers/adminController');
+const { getWhitelistStatus, getCacheStats } = require('../controllers/adminController');
 
 const router = Router();
 
@@ -34,5 +34,28 @@ const router = Router();
  *                       type: object
  */
 router.get('/whitelist-status', getWhitelistStatus);
+
+/**
+ * @swagger
+ * /api/admin/cache-stats:
+ *   get:
+ *     summary: Get memory and persistent cache statistics
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Cache statistics
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     memory_cache: { type: object }
+ *                     persistent_cache: { type: object }
+ */
+router.get('/cache-stats', getCacheStats);
 
 module.exports = router;

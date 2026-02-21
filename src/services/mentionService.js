@@ -22,8 +22,6 @@ class MentionService {
 
     for (const match of searchResult.messages) {
       const channelId = match.channel?.id;
-      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) continue;
-
       const isThreadReply = !!(match.thread_ts && match.thread_ts !== match.ts);
       const channelName = match.channel?.name || 'unknown';
 
@@ -86,8 +84,6 @@ class MentionService {
 
     for (const match of searchResult.messages) {
       const channelId = match.channel?.id;
-      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) continue;
-
       const threadTs = match.thread_ts || match.ts;
       const threadKey = `${channelId}:${threadTs}`;
 
@@ -156,9 +152,6 @@ class MentionService {
   }
 
   async getMentionsByChannel(channelId, count = 20, includeThreads = true) {
-    const readCheck = this.whitelist.canReadChannel(channelId);
-    if (!readCheck.allowed) throw readCheck.error;
-
     const userId = this.slack.currentUserId;
     const query = `<@${userId}> in:${this.whitelist.channelIdToName.get(channelId) || channelId}`;
 

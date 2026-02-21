@@ -50,9 +50,7 @@ const config = Object.freeze({
 
   // Whitelist
   whitelist: Object.freeze({
-    readChannels: parseList(process.env.ALLOWED_READ_CHANNELS),
     writeChannels: parseList(process.env.ALLOWED_WRITE_CHANNELS),
-    dmChannels: parseList(process.env.ALLOWED_DM_CHANNELS),
     dmUsers: parseList(process.env.ALLOWED_DM_USERS),
   }),
 
@@ -61,6 +59,13 @@ const config = Object.freeze({
 
   // Swagger docs
   enableSwagger: parseBoolean(process.env.ENABLE_SWAGGER, true),
+
+  // Persistent file-based cache
+  persistentCache: Object.freeze({
+    enabled: parseBoolean(process.env.ENABLE_PERSISTENT_CACHE, false),
+    dataDir: process.env.PERSISTENT_CACHE_DIR || 'data',
+    maxFetchOnSync: parseInt_(process.env.PERSISTENT_CACHE_MAX_FETCH, 200),
+  }),
 
   // HTTPS
   enableHttps: parseBoolean(process.env.ENABLE_HTTPS, false),

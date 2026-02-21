@@ -28,6 +28,7 @@ const UserService = require('./services/userService');
 const SearchService = require('./services/searchService');
 const MentionService = require('./services/mentionService');
 const ActivityService = require('./services/activityService');
+const PersistentCacheService = require('./services/persistentCacheService');
 
 const app = express();
 
@@ -137,9 +138,16 @@ async function start() {
     // Initialize whitelist (resolves channel/user names)
     await whitelistService.initialize();
 
+    // Initialize persistent cache if enabled
+    let persistentCacheService = null;
+    if (config.persistentCache.enabled) {
+      persistentCacheService = new PersistentCacheService();
+      await persistentCacheService.initialize();
+    }
+
     // Build higher-level services
     const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService);
-    const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService);
+    const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService, persistentCacheService);
     const userService = new UserService(slackClient, cacheService, paginationService);
     const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);
     const mentionService = new MentionService(slackClient, cacheService, messageService, whitelistService);
@@ -156,6 +164,7 @@ async function start() {
       searchService,
       mentionService,
       activityService,
+      persistentCacheService,
     };
 
     let server;

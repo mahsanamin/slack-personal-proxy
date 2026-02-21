@@ -21,12 +21,7 @@ class SearchService {
     const results = [];
 
     for (const match of searchResult.messages) {
-      // Filter out results from non-whitelisted channels
       const channelId = match.channel?.id;
-      if (channelId && !this.whitelist.canReadChannel(channelId).allowed) {
-        continue;
-      }
-
       const isInThread = !!(match.thread_ts && match.thread_ts !== match.ts);
       const threadKey = `${channelId}:${match.thread_ts || match.ts}`;
 
