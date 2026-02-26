@@ -22,16 +22,18 @@ const router = Router();
  *                   type: object
  *                   properties:
  *                     enforce: { type: boolean }
- *                     read_channels:
+ *                     write_channels:
  *                       type: object
  *                       properties:
  *                         configured: { type: boolean }
  *                         count: { type: integer }
  *                         channels: { type: array, items: { type: string } }
- *                     write_channels:
- *                       type: object
  *                     dm_users:
  *                       type: object
+ *                       properties:
+ *                         configured: { type: boolean }
+ *                         count: { type: integer }
+ *                         users: { type: array, items: { type: string } }
  */
 router.get('/whitelist-status', getWhitelistStatus);
 

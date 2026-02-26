@@ -2,33 +2,19 @@
 
 Express proxy over Slack's Web API using cookie auth (xoxc/xoxd). Docker on port 8282, HTTPS.
 
-## Endpoints
-- `GET /api/channels` — list/info
-- `GET /api/messages/:channelId` — recent messages + threads
-- `GET /api/conversations/:channelId/thread/:threadTs` — full thread
-- `GET /api/conversations/:channelId/context` — messages around a target
-- `GET /api/search/messages` — global search
-- `GET /api/mentions/all|threads|:channelId` — @mentions
-- `GET /api/activity/threads-im-in|my-threads` — thread activity
-- `POST /api/messages/:channelId` — send message (write-gated)
-- `GET /api/users/profile/:userId` — user info
-- `GET /health` — health check (no /api prefix)
+## Quick Reference
 
-## Whitelist (write-only)
-- `ALLOWED_WRITE_CHANNELS` — gates POST/send for channels
-- `ALLOWED_DM_USERS` — gates DM sends by user
-- Reads are unrestricted (Slack gates access by membership)
+- `npm test` — Jest (49 tests). `docker compose up -d --build` to rebuild.
+- `docs/` — Full project docs (architecture, endpoints, config, Slack API notes)
+- `docs/ai_rules/` — Code conventions, patterns, and rules for all code changes
 
-## Slack search.messages API gotchas
-- Does NOT return `thread_ts` or `reply_count` — parse `thread_ts` from permalink URL instead
-- `conversations.history` does NOT return thread replies, only top-level messages
-- `from:` modifier takes `me` or username, NOT `<@U...>` mention syntax
-- `in:` modifier takes channel name, NOT channel ID
-- Enrichment: `slackClient.enrichSearchMatches()` handles permalink parsing for all search-based services
+## Slack API Gotchas
+
+- `search.messages` does NOT return `thread_ts` or `reply_count` — parse from permalink URL
+- `from:` takes `me` or username, NOT `<@U...>`. `in:` takes channel name, NOT channel ID
+- `enrichSearchMatches()` in slackClient handles permalink parsing for all search-based services
 - Activity endpoints search 100 results to compensate for client-side thread filtering
 
-## Stack
-Node 20, Express, `@slack/web-api`, Jest. In-memory cache + optional JSONL persistent cache.
+## Whitelist
 
-## Testing
-`npm test` — Jest unit/integration. `docker compose up -d --build` to rebuild.
+Write-only. `ALLOWED_WRITE_CHANNELS` gates sends. `ALLOWED_DM_USERS` gates DMs. Reads unrestricted.
