@@ -12,15 +12,35 @@ if [ -f "$CERT_DIR/server.key" ] && [ -f "$CERT_DIR/server.cert" ]; then
 fi
 
 echo "Generating self-signed certificate..."
+
+# Use a temp config file for SAN support (works on all OpenSSL versions)
+TMPCONF=$(mktemp)
+cat > "$TMPCONF" <<CONF
+[req]
+default_bits = 2048
+prompt = no
+distinguished_name = dn
+x509_extensions = v3_ext
+
+[dn]
+CN = slack-personal-proxy
+O = Personal
+C = US
+
+[v3_ext]
+subjectAltName = DNS:localhost,IP:127.0.0.1
+CONF
+
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "$CERT_DIR/server.key" \
   -out "$CERT_DIR/server.cert" \
   -days 365 \
-  -subj "/CN=slack-personal-proxy/O=Personal/C=US" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -config "$TMPCONF" \
   2>/dev/null
+RESULT=$?
+rm -f "$TMPCONF"
 
-if [ $? -eq 0 ]; then
+if [ $RESULT -eq 0 ]; then
   chmod 600 "$CERT_DIR/server.key"
   echo "Done! Certificates saved to $CERT_DIR/"
   echo "  Key:  $CERT_DIR/server.key"

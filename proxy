@@ -80,8 +80,52 @@ show_status() {
   echo "Health:  curl ${opts} ${scheme}://localhost:${port}/health"
 }
 
+ensure_certs() {
+  if [ "${ENABLE_HTTPS:-false}" != "true" ]; then
+    return
+  fi
+  if [ -f certs/server.key ] && [ -f certs/server.cert ]; then
+    return
+  fi
+  echo "HTTPS is enabled but certs are missing."
+  echo "Generating self-signed certificate..."
+  mkdir -p certs
+  TMPCONF=$(mktemp)
+  cat > "$TMPCONF" <<CONF
+[req]
+default_bits = 2048
+prompt = no
+distinguished_name = dn
+x509_extensions = v3_ext
+
+[dn]
+CN = slack-personal-proxy
+O = Personal
+C = US
+
+[v3_ext]
+subjectAltName = DNS:localhost,IP:127.0.0.1
+CONF
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout certs/server.key \
+    -out certs/server.cert \
+    -days 365 \
+    -config "$TMPCONF" \
+    2>/dev/null
+  RESULT=$?
+  rm -f "$TMPCONF"
+  if [ $RESULT -eq 0 ]; then
+    chmod 600 certs/server.key
+    echo "Certs generated in certs/"
+  else
+    echo "ERROR: Failed to generate certs. Install openssl or set ENABLE_HTTPS=false"
+    exit 1
+  fi
+}
+
 cmd_start() {
   validate_env
+  ensure_certs
   echo "Building and starting..."
   docker compose -f "$COMPOSE_FILE" up -d --build
   wait_healthy
