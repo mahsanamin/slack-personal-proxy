@@ -27,13 +27,11 @@ const router = Router();
  *                       properties:
  *                         configured: { type: boolean }
  *                         count: { type: integer }
- *                         channels: { type: array, items: { type: string } }
  *                     dm_users:
  *                       type: object
  *                       properties:
  *                         configured: { type: boolean }
  *                         count: { type: integer }
- *                         users: { type: array, items: { type: string } }
  */
 router.get('/whitelist-status', getWhitelistStatus);
 

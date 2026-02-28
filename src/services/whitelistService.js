@@ -132,7 +132,6 @@ class WhitelistService {
         ...ERROR_CODES.WRITE_CHANNEL_NOT_WHITELISTED,
         details: {
           channel: channelId,
-          whitelisted_channels: [...this.writeChannelIds],
         },
       },
     };
@@ -152,7 +151,6 @@ class WhitelistService {
         ...ERROR_CODES.USER_NOT_WHITELISTED,
         details: {
           user: userIdOrName,
-          whitelisted_users: [...this.dmUserIds],
         },
       },
     };
@@ -174,12 +172,10 @@ class WhitelistService {
       write_channels: {
         configured: this.enforceWrite,
         count: this.writeChannelIds.size,
-        channels: this.writeChannelEntries,
       },
       dm_users: {
         configured: this.dmUserEntries.length > 0,
         count: this.dmUserIds.size,
-        users: this.dmUserEntries,
       },
     };
   }
