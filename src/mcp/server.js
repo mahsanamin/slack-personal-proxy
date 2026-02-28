@@ -6,6 +6,7 @@ const getThreadActivity = require('./tools/getThreadActivity');
 const sendMessage = require('./tools/sendMessage');
 const search = require('./tools/search');
 const getThread = require('./tools/getThread');
+const unread = require('./tools/unread');
 
 function createMcpServer(getServices) {
   const server = new McpServer({
@@ -19,6 +20,7 @@ function createMcpServer(getServices) {
   sendMessage.register(server, getServices);
   search.register(server, getServices);
   getThread.register(server, getServices);
+  unread.register(server, getServices);
 
   return server;
 }

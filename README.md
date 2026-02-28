@@ -154,7 +154,8 @@ Then `./proxy restart`. The MCP endpoint is at `POST /mcp`, protected by the sam
 
 | Tool | Description |
 |------|-------------|
-| `slack_summary` | One-call overview: mentions + threads with new activity |
+| `slack_unread` | Full catch-up: mentions + threads you're in + threads you started, deduplicated |
+| `slack_summary` | Lighter overview: mentions + threads with new activity |
 | `slack_get_mentions` | All your @mentions with optional thread context |
 | `slack_get_thread_activity` | Threads you're in with new replies since your last message |
 | `slack_send_message` | Send/reply to whitelisted channels (requires `ENABLE_WRITE_OPS=true`) |
@@ -167,7 +168,7 @@ Then `./proxy restart`. The MCP endpoint is at `POST /mcp`, protected by the sam
 ```json
 {
   "mcpServers": {
-    "slack": {
+    "slack-proxy": {
       "type": "url",
       "url": "https://YOUR_IP:8282/mcp",
       "headers": { "X-API-Key": "YOUR_KEY" }
