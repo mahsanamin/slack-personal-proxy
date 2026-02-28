@@ -25,7 +25,7 @@ npm run setup    # choose option 2
 Then put them in `.env`:
 ```bash
 cp .env.example .env
-# Set SLACK_COOKIE, SLACK_TOKEN, API_KEY, and ALLOWED_READ_CHANNELS
+# Set SLACK_COOKIE, SLACK_TOKEN, and API_KEY
 ```
 
 **Option C: Bot token** — if you have an approved Slack app:
@@ -39,7 +39,8 @@ cp .env.example .env
 ```bash
 # In .env — comma-separated channel IDs or names
 ALLOWED_WRITE_CHANNELS=C12345,C67890
-ALLOWED_DM_USERS=U12345
+# Accepts user IDs (U...), usernames, or DM channel IDs (D...)
+ALLOWED_DM_USERS=D020BE909FV,U12345
 ENABLE_WRITE_OPS=true
 ```
 
@@ -55,15 +56,13 @@ Loopback (`127.0.0.1`, `::1`) always passes so Docker healthchecks keep working.
 
 ### 3. HTTPS (recommended for network access)
 
-```bash
-./scripts/generate-cert.sh   # generates self-signed cert in certs/
-```
-
-Then in `.env`:
+In `.env`:
 ```bash
 ENABLE_HTTPS=true
-BIND_ADDRESS=0.0.0.0         # expose on network
+BIND_ADDRESS=0.0.0.0         # expose on network (IP allowlist handles security)
 ```
+
+`./proxy start` auto-generates self-signed certs if missing and fixes permissions.
 
 Access via `https://<YOUR_IP>:8282/docs`. Browser will warn about self-signed cert — accept to proceed.
 
@@ -126,7 +125,7 @@ See [`.env.example`](.env.example) for all options. Key ones:
 | `SLACK_BOT_TOKEN` | — | Or bot auth (`xoxb-`) * |
 | `API_KEY` | — | Proxy API key (required) |
 | `ALLOWED_WRITE_CHANNELS` | empty | Comma-separated write whitelist (empty = all writes allowed) |
-| `ALLOWED_DM_USERS` | empty | Comma-separated DM user whitelist (empty = all DMs allowed) |
+| `ALLOWED_DM_USERS` | empty | DM whitelist: user IDs (`U...`), names, or DM channel IDs (`D...`) |
 | `ALLOWED_IPS` | empty | IP allowlist — empty = localhost only, `0.0.0.0` = everyone |
 | `ENABLE_WRITE_OPS` | `false` | Must be `true` to send messages |
 | `ENABLE_HTTPS` | `false` | Enable HTTPS with self-signed cert |
