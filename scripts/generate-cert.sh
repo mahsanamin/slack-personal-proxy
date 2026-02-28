@@ -35,11 +35,11 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "$CERT_DIR/server.key" \
   -out "$CERT_DIR/server.cert" \
   -days 365 \
-  -config "$TMPCONF"
-RESULT=$?
+  -config "$TMPCONF" \
+  || true
 rm -f "$TMPCONF"
 
-if [ $RESULT -eq 0 ]; then
+if [ -f "$CERT_DIR/server.key" ] && [ -f "$CERT_DIR/server.cert" ]; then
   chmod 600 "$CERT_DIR/server.key"
   echo "Done! Certificates saved to $CERT_DIR/"
   echo "  Key:  $CERT_DIR/server.key"

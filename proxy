@@ -110,10 +110,10 @@ CONF
     -keyout certs/server.key \
     -out certs/server.cert \
     -days 365 \
-    -config "$TMPCONF"
-  RESULT=$?
+    -config "$TMPCONF" \
+    || true
   rm -f "$TMPCONF"
-  if [ $RESULT -eq 0 ] && [ -f certs/server.key ] && [ -f certs/server.cert ]; then
+  if [ -f certs/server.key ] && [ -f certs/server.cert ]; then
     chmod 600 certs/server.key
     echo "Certs generated in certs/"
   else
