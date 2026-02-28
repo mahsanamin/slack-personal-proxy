@@ -89,6 +89,12 @@ ensure_certs() {
   fi
   echo "HTTPS is enabled but certs are missing."
   echo "Generating self-signed certificate..."
+  # Docker may have created certs/ as root via the volume mount
+  if [ -d certs ] && [ ! -w certs ]; then
+    echo "certs/ directory is not writable (owned by root from Docker)."
+    echo "Fixing with sudo..."
+    sudo chown -R "$(id -u):$(id -g)" certs
+  fi
   mkdir -p certs
   TMPCONF=$(mktemp)
   cat > "$TMPCONF" <<CONF
@@ -117,7 +123,7 @@ CONF
     chmod 600 certs/server.key
     echo "Certs generated in certs/"
   else
-    echo "ERROR: Failed to generate certs (exit code: $RESULT)"
+    echo "ERROR: Failed to generate certs."
     echo "Try manually: ./scripts/generate-cert.sh"
     exit 1
   fi
