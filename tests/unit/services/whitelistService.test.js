@@ -1,7 +1,7 @@
 jest.mock('../../../src/config', () => ({
   whitelist: {
     writeChannels: ['bot-testing'],
-    dmUsers: ['alice', 'U99999'],
+    dmUsers: ['alice', 'U99999', 'D11111111'],
   },
   maxPaginationCalls: 10,
   logLevel: 'error',
@@ -39,6 +39,11 @@ describe('WhitelistService', () => {
           { id: 'U22222', name: 'carol' },
         ],
         next_cursor: null,
+      }),
+      getChannelInfo: jest.fn().mockResolvedValue({
+        id: 'D11111111',
+        user: 'U33333',
+        is_im: true,
       }),
     };
 
@@ -80,6 +85,25 @@ describe('WhitelistService', () => {
     const result = whitelist.canSendDmToUser('carol');
     expect(result.allowed).toBe(false);
     expect(result.error.code).toBe('USER_NOT_WHITELISTED');
+  });
+
+  test('resolves DM channel ID (D-prefix) to user ID', () => {
+    expect(whitelist.dmUserIds.has('U33333')).toBe(true);
+  });
+
+  test('resolveUserIdFromDmChannel returns cached user ID', async () => {
+    const userId = await whitelist.resolveUserIdFromDmChannel('D11111111');
+    expect(userId).toBe('U33333');
+  });
+
+  test('resolveUserIdFromDmChannel fetches from API for unknown channel', async () => {
+    mockSlackClient.getChannelInfo.mockResolvedValueOnce({
+      id: 'D99999999',
+      user: 'U44444',
+      is_im: true,
+    });
+    const userId = await whitelist.resolveUserIdFromDmChannel('D99999999');
+    expect(userId).toBe('U44444');
   });
 
   test('getStatus returns whitelist configuration', () => {

@@ -1,6 +1,6 @@
 const config = require('../config');
 const logger = require('../utils/logger');
-const { CACHE_PREFIXES } = require('../utils/constants');
+const { CACHE_PREFIXES, ERROR_CODES } = require('../utils/constants');
 
 class MessageService {
   constructor(slackClient, cacheService, paginationService, whitelistService, persistentCacheService = null) {
@@ -320,9 +320,18 @@ class MessageService {
   }
 
   async sendMessage(channelId, text, threadTs = null) {
-    // DM channels (D-prefix) are unrestricted; regular channels check write whitelist
     const isDm = channelId.startsWith('D');
-    if (!isDm) {
+    if (isDm) {
+      const userId = await this.whitelist.resolveUserIdFromDmChannel(channelId);
+      if (!userId) {
+        const err = { ...ERROR_CODES.USER_NOT_FOUND, details: { channel: channelId } };
+        throw err;
+      }
+      const dmCheck = this.whitelist.canSendDmToUser(userId);
+      if (!dmCheck.allowed) {
+        throw dmCheck.error;
+      }
+    } else {
       const writeCheck = this.whitelist.canWriteChannel(channelId);
       if (!writeCheck.allowed) {
         throw writeCheck.error;

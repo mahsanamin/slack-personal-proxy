@@ -1,6 +1,6 @@
 const { Router } = require('express');
-const { listUsers, getUserProfile } = require('../controllers/userController');
-const { validateBoolean, handleValidationErrors } = require('../middleware/validator');
+const { listUsers, getUserProfile, getUserByEmail } = require('../controllers/userController');
+const { validateBoolean, validateEmail, handleValidationErrors } = require('../middleware/validator');
 const { param } = require('express-validator');
 
 const router = Router();
@@ -29,6 +29,33 @@ router.get('/',
   validateBoolean('includeBots'),
   handleValidationErrors,
   listUsers
+);
+
+/**
+ * @swagger
+ * /api/users/by-email:
+ *   get:
+ *     summary: Look up a user by email and get their DM channel ID
+ *     tags: [Users]
+ *     parameters:
+ *       - in: query
+ *         name: email
+ *         required: true
+ *         schema: { type: string, format: email }
+ *         description: Email address of the user to look up
+ *         example: alice@example.com
+ *     responses:
+ *       200:
+ *         description: User info with DM channel ID
+ *       400:
+ *         description: Invalid email format
+ *       404:
+ *         description: User not found
+ */
+router.get('/by-email',
+  validateEmail,
+  handleValidationErrors,
+  getUserByEmail
 );
 
 /**

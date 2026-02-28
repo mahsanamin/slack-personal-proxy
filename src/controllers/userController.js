@@ -30,4 +30,17 @@ async function getUserProfile(req, res, next) {
   }
 }
 
-module.exports = { listUsers, getUserProfile };
+async function getUserByEmail(req, res, next) {
+  try {
+    const { userService } = req.services;
+    const { email } = req.query;
+
+    const result = await userService.getUserByEmail(email);
+
+    res.json(formatSuccessResponse(result, { cached: result.cached }));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listUsers, getUserProfile, getUserByEmail };

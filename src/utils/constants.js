@@ -35,6 +35,7 @@ const CACHE_PREFIXES = Object.freeze({
   USER_PROFILE: 'users:profile:',
   USER_NAME: 'users:name:',
   THREAD: 'thread:',
+  USER_BY_EMAIL: 'users:by-email:',
   HEALTH: 'health:status',
 });
 

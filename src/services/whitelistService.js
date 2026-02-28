@@ -5,6 +5,7 @@ const { ERROR_CODES } = require('../utils/constants');
 // Channel IDs start with C, D, G, or W
 const CHANNEL_ID_REGEX = /^[CDGW][A-Z0-9]+$/;
 const USER_ID_REGEX = /^[UW][A-Z0-9]+$/;
+const DM_CHANNEL_ID_REGEX = /^D[A-Z0-9]+$/;
 
 class WhitelistService {
   constructor(slackClient, paginationService) {
@@ -24,6 +25,7 @@ class WhitelistService {
     // Resolved ID sets (populated after initialize)
     this.writeChannelIds = new Set();
     this.dmUserIds = new Set();
+    this.dmChannelToUserId = new Map();
 
     this.enforceWrite = this.writeChannelEntries.length > 0;
     this.enforceDm = this.dmUserEntries.length > 0;
@@ -45,9 +47,19 @@ class WhitelistService {
       else logger.warn(`Could not resolve write channel: ${entry}`);
     }
     for (const entry of this.dmUserEntries) {
-      const id = this._resolveUserEntry(entry);
-      if (id) this.dmUserIds.add(id);
-      else logger.warn(`Could not resolve DM user: ${entry}`);
+      if (DM_CHANNEL_ID_REGEX.test(entry)) {
+        const userId = await this._resolveUserIdFromDmChannel(entry);
+        if (userId) {
+          this.dmUserIds.add(userId);
+          this.dmChannelToUserId.set(entry, userId);
+        } else {
+          logger.warn(`Could not resolve DM channel to user: ${entry}`);
+        }
+      } else {
+        const id = this._resolveUserEntry(entry);
+        if (id) this.dmUserIds.add(id);
+        else logger.warn(`Could not resolve DM user: ${entry}`);
+      }
     }
 
     logger.info(
@@ -84,6 +96,31 @@ class WhitelistService {
   _resolveUserEntry(entry) {
     if (USER_ID_REGEX.test(entry)) return entry;
     return this.userNameToId.get(entry) || null;
+  }
+
+  async _resolveUserIdFromDmChannel(dmChannelId) {
+    try {
+      const channel = await this.slack.getChannelInfo(dmChannelId);
+      if (channel && channel.user) {
+        logger.info(`Resolved DM channel ${dmChannelId} to user ${channel.user}`);
+        return channel.user;
+      }
+      return null;
+    } catch (err) {
+      logger.error(`Failed to resolve DM channel ${dmChannelId}: ${err.message}`);
+      return null;
+    }
+  }
+
+  async resolveUserIdFromDmChannel(dmChannelId) {
+    if (this.dmChannelToUserId.has(dmChannelId)) {
+      return this.dmChannelToUserId.get(dmChannelId);
+    }
+    const userId = await this._resolveUserIdFromDmChannel(dmChannelId);
+    if (userId) {
+      this.dmChannelToUserId.set(dmChannelId, userId);
+    }
+    return userId;
   }
 
   canWriteChannel(channelId) {

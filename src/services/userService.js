@@ -94,6 +94,39 @@ class UserService {
 
     return { ...data, cached: false };
   }
+  async getUserByEmail(email) {
+    const cacheKey = CACHE_PREFIXES.USER_BY_EMAIL + email;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return { ...cached, cached: true };
+    }
+
+    logger.info(`Looking up user by email: ${email}`);
+    const user = await this.slack.lookupUserByEmail(email);
+    const dmChannel = await this.slack.openDmChannel(user.id);
+
+    const data = {
+      id: user.id,
+      name: user.name,
+      real_name: user.real_name || '',
+      email: user.profile?.email || email,
+      dm_channel_id: dmChannel.id,
+      profile: {
+        display_name: user.profile?.display_name || '',
+        status_text: user.profile?.status_text || '',
+        status_emoji: user.profile?.status_emoji || '',
+        image_72: user.profile?.image_72 || '',
+      },
+      is_admin: user.is_admin || false,
+      is_bot: user.is_bot || false,
+      deleted: user.deleted || false,
+      tz: user.tz || '',
+    };
+
+    this.cache.set(cacheKey, data, config.cache.userTtl);
+
+    return { ...data, cached: false };
+  }
 }
 
 module.exports = UserService;

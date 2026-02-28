@@ -169,6 +169,16 @@ class SlackClient {
     return result.channel;
   }
 
+  async lookupUserByEmail(email) {
+    const result = await this.client.users.lookupByEmail({ email });
+    return result.user;
+  }
+
+  async openDmChannel(userId) {
+    const result = await this.client.conversations.open({ users: userId });
+    return result.channel;
+  }
+
   async postMessage(channel, text, threadTs = null) {
     const params = { channel, text };
     if (threadTs) params.thread_ts = threadTs;

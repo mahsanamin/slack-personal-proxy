@@ -60,6 +60,12 @@ const validateThreadTs = body('thread_ts')
   .matches(TIMESTAMP_REGEX)
   .withMessage('Invalid thread_ts format. Expected format: 1234567890.123456');
 
+const validateEmail = query('email')
+  .notEmpty()
+  .withMessage('Email is required.')
+  .isEmail()
+  .withMessage('Invalid email format.');
+
 module.exports = {
   validateChannelId,
   validateCount,
@@ -69,5 +75,6 @@ module.exports = {
   validateSortOrder,
   validateMessageText,
   validateThreadTs,
+  validateEmail,
   handleValidationErrors,
 };

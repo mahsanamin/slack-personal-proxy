@@ -106,6 +106,7 @@ All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.en
 | GET | `/api/conversations/:channelId/context?messageTs=...&before=5&after=5` | Context around a message |
 | GET | `/api/users` | List users |
 | GET | `/api/users/:id/profile` | User profile |
+| GET | `/api/users/by-email?email=...` | Look up user by email, get DM channel ID |
 | GET | `/api/search/messages?query=...&count=10` | Search (whitelisted channels only) |
 | GET | `/api/mentions/all?count=20&includeThreads=true` | All your mentions |
 | GET | `/api/mentions/threads?count=20` | Threads where you're mentioned |
