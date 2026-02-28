@@ -40,7 +40,7 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 rm -f "$TMPCONF"
 
 if [ -f "$CERT_DIR/server.key" ] && [ -f "$CERT_DIR/server.cert" ]; then
-  chmod 600 "$CERT_DIR/server.key"
+  chmod 644 "$CERT_DIR/server.key" "$CERT_DIR/server.cert"
   echo "Done! Certificates saved to $CERT_DIR/"
   echo "  Key:  $CERT_DIR/server.key"
   echo "  Cert: $CERT_DIR/server.cert"

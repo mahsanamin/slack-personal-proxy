@@ -120,7 +120,7 @@ CONF
     || true
   rm -f "$TMPCONF"
   if [ -f certs/server.key ] && [ -f certs/server.cert ]; then
-    chmod 600 certs/server.key
+    chmod 644 certs/server.key certs/server.cert
     echo "Certs generated in certs/"
   else
     echo "ERROR: Failed to generate certs."
