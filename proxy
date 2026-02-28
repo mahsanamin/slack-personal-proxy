@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+COMPOSE_FILE="docker-compose.yml"
+SERVICE_NAME="slack-personal-proxy"
+
+# Load .env for health check config
+load_env() {
+  if [ ! -f .env ]; then
+    echo "ERROR: .env file not found. Copy .env.example and configure it:"
+    echo "  cp .env.example .env"
+    exit 1
+  fi
+  source .env
+}
+
+health_url() {
+  local port="${HOST_PORT:-8282}"
+  if [ "${ENABLE_HTTPS:-false}" = "true" ]; then
+    echo "https://localhost:${port}/health"
+  else
+    echo "http://localhost:${port}/health"
+  fi
+}
+
+curl_opts() {
+  if [ "${ENABLE_HTTPS:-false}" = "true" ]; then
+    echo "-sk"
+  else
+    echo "-s"
+  fi
+}
+
+validate_env() {
+  load_env
+  if [ -z "${API_KEY:-}" ]; then
+    echo "ERROR: API_KEY is not set in .env"
+    exit 1
+  fi
+  if [ -z "${SLACK_BOT_TOKEN:-}" ] && { [ -z "${SLACK_COOKIE:-}" ] || [ -z "${SLACK_TOKEN:-}" ]; }; then
+    echo "ERROR: No Slack credentials configured. Set SLACK_BOT_TOKEN or both SLACK_COOKIE and SLACK_TOKEN"
+    exit 1
+  fi
+}
+
+wait_healthy() {
+  local url
+  url=$(health_url)
+  local opts
+  opts=$(curl_opts)
+  echo "Waiting for health check (${url})..."
+  local retries=30
+  while [ $retries -gt 0 ]; do
+    STATUS=$(curl $opts -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+    if [ "$STATUS" = "200" ]; then
+      echo "Service is healthy!"
+      return 0
+    fi
+    retries=$((retries - 1))
+    sleep 1
+  done
+  echo "WARNING: Health check did not pass within 30 seconds."
+  echo "Check logs: ./proxy logs"
+  return 1
+}
+
+show_status() {
+  load_env
+  local port="${HOST_PORT:-8282}"
+  local scheme="http"
+  local opts="-s"
+  if [ "${ENABLE_HTTPS:-false}" = "true" ]; then
+    scheme="https"
+    opts="-sk"
+  fi
+  echo ""
+  docker compose -f "$COMPOSE_FILE" ps
+  echo ""
+  echo "Service: ${scheme}://localhost:${port}"
+  echo "Health:  curl ${opts} ${scheme}://localhost:${port}/health"
+}
+
+cmd_start() {
+  validate_env
+  echo "Building and starting..."
+  docker compose -f "$COMPOSE_FILE" up -d --build
+  wait_healthy
+  show_status
+}
+
+cmd_stop() {
+  echo "Stopping..."
+  docker compose -f "$COMPOSE_FILE" down
+  echo "Stopped."
+}
+
+cmd_restart() {
+  cmd_stop
+  cmd_start
+}
+
+cmd_logs() {
+  docker compose -f "$COMPOSE_FILE" logs -f "$@"
+}
+
+cmd_status() {
+  load_env
+  local url
+  url=$(health_url)
+  local opts
+  opts=$(curl_opts)
+  local http_code
+  http_code=$(curl $opts -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+  if [ "$http_code" = "200" ]; then
+    echo "Status: running"
+    show_status
+  else
+    echo "Status: not running (HTTP $http_code)"
+  fi
+}
+
+cmd_help() {
+  echo "Usage: ./proxy <command>"
+  echo ""
+  echo "Commands:"
+  echo "  start     Build, start, and wait for healthy"
+  echo "  stop      Stop and remove container"
+  echo "  restart   Stop then start"
+  echo "  logs      Tail container logs (Ctrl-C to exit)"
+  echo "  status    Check if service is running"
+  echo "  help      Show this help"
+}
+
+case "${1:-help}" in
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  restart) cmd_restart ;;
+  logs)    shift; cmd_logs "$@" ;;
+  status)  cmd_status ;;
+  help|*)  cmd_help ;;
+esac

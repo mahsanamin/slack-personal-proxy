@@ -13,6 +13,7 @@ const { formatErrorResponse } = require('./utils/helpers');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
+const ipWhitelist = require('./middleware/ipWhitelist');
 const authMiddleware = require('./middleware/auth');
 const rateLimiter = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
@@ -31,6 +32,9 @@ const ActivityService = require('./services/activityService');
 const PersistentCacheService = require('./services/persistentCacheService');
 
 const app = express();
+
+// IP allowlist — first gate, before any processing
+app.use(ipWhitelist);
 
 // Security & parsing
 // Helmet with relaxed CSP for Swagger UI (needs inline scripts/styles)

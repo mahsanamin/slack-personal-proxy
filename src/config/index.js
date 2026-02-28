@@ -54,6 +54,9 @@ const config = Object.freeze({
     dmUsers: parseList(process.env.ALLOWED_DM_USERS),
   }),
 
+  // IP allowlist (CIDR ranges and single IPs)
+  allowedIps: parseList(process.env.ALLOWED_IPS),
+
   // Write operations
   enableWriteOps: parseBoolean(process.env.ENABLE_WRITE_OPS, false),
 

@@ -4,7 +4,7 @@ Express proxy over Slack's Web API using cookie auth (xoxc/xoxd). Docker on port
 
 ## Quick Reference
 
-- `npm test` — Jest (49 tests). `docker compose up -d --build` to rebuild.
+- `npm test` — Jest (61 tests). `./proxy start|stop|restart|logs|status` to manage Docker.
 - `docs/` — Full project docs (architecture, endpoints, config, Slack API notes)
 - `docs/ai_rules/` — Code conventions, patterns, and rules for all code changes
 

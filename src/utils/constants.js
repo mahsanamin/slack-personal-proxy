@@ -10,6 +10,7 @@ const ERROR_CODES = Object.freeze({
   INVALID_TIMESTAMP: { code: 'INVALID_TIMESTAMP', status: 400, message: 'Invalid Slack message timestamp format.' },
 
   // Authorization errors
+  IP_NOT_ALLOWED: { code: 'IP_NOT_ALLOWED', status: 403, message: 'Access denied. Your IP is not in the allowlist.' },
   WRITE_CHANNEL_NOT_WHITELISTED: { code: 'WRITE_CHANNEL_NOT_WHITELISTED', status: 403, message: 'Channel is not in the write whitelist.' },
   USER_NOT_WHITELISTED: { code: 'USER_NOT_WHITELISTED', status: 403, message: 'User is not in the DM whitelist.' },
   WRITE_OPS_DISABLED: { code: 'WRITE_OPS_DISABLED', status: 403, message: 'Write operations are disabled.' },
