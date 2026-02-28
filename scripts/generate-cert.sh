@@ -35,8 +35,7 @@ openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "$CERT_DIR/server.key" \
   -out "$CERT_DIR/server.cert" \
   -days 365 \
-  -config "$TMPCONF" \
-  2>/dev/null
+  -config "$TMPCONF"
 RESULT=$?
 rm -f "$TMPCONF"
 

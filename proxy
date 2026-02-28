@@ -110,15 +110,15 @@ CONF
     -keyout certs/server.key \
     -out certs/server.cert \
     -days 365 \
-    -config "$TMPCONF" \
-    2>/dev/null
+    -config "$TMPCONF"
   RESULT=$?
   rm -f "$TMPCONF"
-  if [ $RESULT -eq 0 ]; then
+  if [ $RESULT -eq 0 ] && [ -f certs/server.key ] && [ -f certs/server.cert ]; then
     chmod 600 certs/server.key
     echo "Certs generated in certs/"
   else
-    echo "ERROR: Failed to generate certs. Install openssl or set ENABLE_HTTPS=false"
+    echo "ERROR: Failed to generate certs (exit code: $RESULT)"
+    echo "Try manually: ./scripts/generate-cert.sh"
     exit 1
   fi
 }
