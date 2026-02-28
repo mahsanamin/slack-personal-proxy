@@ -85,6 +85,11 @@ ensure_certs() {
     return
   fi
   if [ -f certs/server.key ] && [ -f certs/server.cert ]; then
+    # Ensure certs are readable by Docker container (appuser UID 1001)
+    if [ ! -r certs/server.key ] || [ "$(stat -c '%a' certs/server.key 2>/dev/null || stat -f '%Lp' certs/server.key)" != "644" ]; then
+      echo "Fixing cert permissions..."
+      chmod 644 certs/server.key certs/server.cert 2>/dev/null || sudo chmod 644 certs/server.key certs/server.cert
+    fi
     return
   fi
   echo "HTTPS is enabled but certs are missing."
