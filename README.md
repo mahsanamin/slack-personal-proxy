@@ -131,10 +131,63 @@ See [`.env.example`](.env.example) for all options. Key ones:
 | `ENABLE_HTTPS` | `false` | Enable HTTPS with self-signed cert |
 | `BIND_ADDRESS` | `127.0.0.1` | `0.0.0.0` to expose on network |
 | `HOST_PORT` | `8282` | Port on the host machine |
+| `ENABLE_MCP` | `false` | Enable MCP server at `/mcp` for LLM tool use |
 | `ENABLE_SWAGGER` | `true` | Set `false` to disable `/docs` |
 | `ENABLE_CACHING` | `true` | Toggle response caching |
 
 \* One of cookie pair or bot token required.
+
+## MCP Server (LLM Tool Use)
+
+The proxy includes an optional [Model Context Protocol](https://modelcontextprotocol.io/) server that lets LLM clients (Claude Code, Cursor, etc.) call Slack tools directly — no extra process, same container, same security stack.
+
+### Enable
+
+```bash
+# In .env
+ENABLE_MCP=true
+```
+
+Then `./proxy restart`. The MCP endpoint is at `POST /mcp`, protected by the same auth (`X-API-Key`), IP allowlist, and rate limits as `/api/*`.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `slack_summary` | One-call overview: mentions + threads with new activity |
+| `slack_get_mentions` | All your @mentions with optional thread context |
+| `slack_get_thread_activity` | Threads you're in with new replies since your last message |
+| `slack_send_message` | Send/reply to whitelisted channels (requires `ENABLE_WRITE_OPS=true`) |
+| `slack_search` | Full-text search with Slack query syntax (`from:`, `in:`, `has:`, etc.) |
+| `slack_get_thread` | Get complete thread — parent message + all replies |
+
+### Client Configuration
+
+**Claude Code** — add to `~/.claude/.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "slack": {
+      "type": "url",
+      "url": "https://YOUR_IP:8282/mcp",
+      "headers": { "X-API-Key": "YOUR_KEY" }
+    }
+  }
+}
+```
+
+**Other MCP clients** — point any Streamable HTTP client at `POST https://YOUR_IP:8282/mcp` with the `X-API-Key` header. The server is stateless (no session management needed).
+
+### Verify
+
+```bash
+# Should return tool list
+curl -sk -X POST https://localhost:8282/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "X-API-Key: YOUR_KEY" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
 
 ## Architecture
 

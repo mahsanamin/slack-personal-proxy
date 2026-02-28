@@ -115,6 +115,13 @@ app.get('/health', async (req, res) => {
 // API routes (auth required)
 app.use('/api', authMiddleware, apiRoutes);
 
+// MCP server (auth required, opt-in)
+if (config.enableMcp) {
+  const { mountMcp } = require('./mcp');
+  app.use('/mcp', authMiddleware);
+  mountMcp(app, () => services);
+}
+
 // 404 handler
 app.use((req, res) => {
   res.status(ERROR_CODES.NOT_FOUND.status).json(

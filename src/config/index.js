@@ -63,6 +63,9 @@ const config = Object.freeze({
   // Swagger docs
   enableSwagger: parseBoolean(process.env.ENABLE_SWAGGER, true),
 
+  // MCP server
+  enableMcp: parseBoolean(process.env.ENABLE_MCP, false),
+
   // Persistent file-based cache
   persistentCache: Object.freeze({
     enabled: parseBoolean(process.env.ENABLE_PERSISTENT_CACHE, false),
