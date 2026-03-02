@@ -1,5 +1,5 @@
-const { formatSuccessResponse } = require('../utils/helpers');
-const { parseBoolean } = require('../utils/helpers');
+const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
+const { compactRecentMessage } = require('../utils/compactThread');
 
 async function listChannels(req, res, next) {
   try {
@@ -37,7 +37,9 @@ async function getRecentMessages(req, res, next) {
     const count = parseInt(req.query.count, 10) || 5;
     const includeThreads = parseBoolean(req.query.includeThreads, true);
 
+    const verbose = parseBoolean(req.query.verbose, false);
     const result = await messageService.getRecentMessages(channelId, count, includeThreads);
+    const messages = verbose ? result.messages : result.messages.map(compactRecentMessage);
 
     // Try to get channel name
     let channelName;
@@ -50,7 +52,7 @@ async function getRecentMessages(req, res, next) {
 
     res.json(formatSuccessResponse(
       {
-        messages: result.messages,
+        messages,
         channel_id: channelId,
         channel_name: channelName,
       },

@@ -19,6 +19,12 @@ const router = Router();
  *           type: integer
  *           default: 20
  *         description: Number of messages to search (1-50)
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Threads with your replies and activity stats
@@ -26,6 +32,7 @@ const router = Router();
 router.get(
   '/threads-im-in',
   validateCount(1, 50, 20),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getThreadsImIn
 );
@@ -51,6 +58,12 @@ router.get(
  *           type: boolean
  *           default: true
  *         description: Fetch complete thread replies
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Threads you initiated with reply details
@@ -59,6 +72,7 @@ router.get(
   '/my-threads',
   validateCount(1, 50, 20),
   validateBoolean('includeReplies'),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getMyThreads
 );

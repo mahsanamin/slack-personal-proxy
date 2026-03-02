@@ -81,6 +81,10 @@ router.get('/:channelId/info',
  *         name: includeThreads
  *         schema: { type: boolean, default: true }
  *         description: Auto-fetch thread replies
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Messages with optional thread replies
@@ -93,6 +97,7 @@ router.get('/:channelId/recent-messages',
   validateChannelId,
   validateCount(1, 10, 5),
   validateBoolean('includeThreads'),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getRecentMessages
 );

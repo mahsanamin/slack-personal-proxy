@@ -25,6 +25,12 @@ const router = Router();
  *           type: boolean
  *           default: true
  *         description: Fetch complete thread context for thread mentions
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: List of mentions grouped by channel
@@ -33,6 +39,7 @@ router.get(
   '/all',
   validateCount(1, 50, 20),
   validateBoolean('includeThreads'),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getAllMentions
 );
@@ -52,6 +59,12 @@ router.get(
  *           type: integer
  *           default: 20
  *         description: Number of mentions to search (1-50)
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Deduplicated threads with mention details
@@ -59,6 +72,7 @@ router.get(
 router.get(
   '/threads',
   validateCount(1, 50, 20),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getMentionThreads
 );
@@ -88,6 +102,12 @@ router.get(
  *         schema:
  *           type: boolean
  *           default: true
+ *       - in: query
+ *         name: verbose
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Mentions in specified channel
@@ -99,6 +119,7 @@ router.get(
   validateChannelId,
   validateCount(1, 50, 20),
   validateBoolean('includeThreads'),
+  validateBoolean('verbose'),
   handleValidationErrors,
   getMentionsByChannel
 );

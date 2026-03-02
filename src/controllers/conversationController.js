@@ -1,16 +1,21 @@
-const { formatSuccessResponse } = require('../utils/helpers');
+const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
+const { compactMessage, compactContextResult } = require('../utils/compactThread');
 
 async function getThread(req, res, next) {
   try {
     const { messageService } = req.services;
     const { channelId, threadTs } = req.params;
+    const verbose = parseBoolean(req.query.verbose, false);
 
     const result = await messageService.getCompleteThread(channelId, threadTs);
 
+    const parent = verbose ? result.parent : compactMessage(result.parent);
+    const replies = verbose ? result.replies : result.replies.map(compactMessage).filter(Boolean);
+
     res.json(formatSuccessResponse(
       {
-        parent: result.parent,
-        replies: result.replies,
+        parent,
+        replies,
         participants: result.participants,
         reply_count: result.reply_count,
       },
@@ -105,7 +110,10 @@ async function getContext(req, res, next) {
       }
     }
 
-    res.json(formatSuccessResponse(result, { api_calls_made: apiCalls }));
+    const verbose = parseBoolean(req.query.verbose, false);
+    const data = verbose ? result : compactContextResult(result);
+
+    res.json(formatSuccessResponse(data, { api_calls_made: apiCalls }));
   } catch (err) {
     next(err);
   }

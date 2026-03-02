@@ -29,6 +29,10 @@ const router = Router();
  *         name: sortOrder
  *         schema: { type: string, enum: [timestamp, score], default: timestamp }
  *         description: Sort order
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Search results with optional thread context
@@ -40,6 +44,7 @@ router.get('/messages',
   validateCount(1, 20, 10),
   validateBoolean('includeThreads'),
   validateSortOrder,
+  validateBoolean('verbose'),
   handleValidationErrors,
   searchMessages
 );

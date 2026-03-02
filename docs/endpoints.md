@@ -8,7 +8,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 |--------|------|-------------|--------------|
 | GET | `/api/channels` | List all channels | `?type=public_channel,private_channel` |
 | GET | `/api/channels/:channelId/info` | Channel details | — |
-| GET | `/api/channels/:channelId/recent-messages` | Recent messages with optional thread expansion | `?count=20&include_threads=true` |
+| GET | `/api/channels/:channelId/recent-messages` | Recent messages with optional thread expansion | `?count=20&include_threads=true&verbose=false` |
 
 ## Messages
 
@@ -20,29 +20,29 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/conversations/:channelId/thread/:threadTs` | Full thread (parent + all replies) | — |
-| GET | `/api/conversations/:channelId/context` | Messages around a target timestamp | `?message_ts=...&before=5&after=5` |
+| GET | `/api/conversations/:channelId/thread/:threadTs` | Full thread (parent + all replies) | `?verbose=false` |
+| GET | `/api/conversations/:channelId/context` | Messages around a target timestamp | `?message_ts=...&before=5&after=5&verbose=false` |
 
 ## Search
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/search/messages` | Global message search with thread context | `?query=...&count=10&include_threads=true&sort=timestamp` |
+| GET | `/api/search/messages` | Global message search with thread context | `?query=...&count=10&include_threads=true&sort=timestamp&verbose=false` |
 
 ## Mentions
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/mentions/all` | All @mentions of current user | `?count=20` |
-| GET | `/api/mentions/threads` | Mentions with full thread context | `?count=10` |
-| GET | `/api/mentions/:channelId` | Mentions in a specific channel | `?count=20` |
+| GET | `/api/mentions/all` | All @mentions of current user | `?count=20&verbose=false` |
+| GET | `/api/mentions/threads` | Mentions with full thread context | `?count=10&verbose=false` |
+| GET | `/api/mentions/:channelId` | Mentions in a specific channel | `?count=20&verbose=false` |
 
 ## Activity
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/activity/threads-im-in` | Threads you replied to (with new-reply tracking) | `?count=20` |
-| GET | `/api/activity/my-threads` | Threads you started | `?count=20&include_replies=true` |
+| GET | `/api/activity/threads-im-in` | Threads you replied to (with new-reply tracking) | `?count=20&verbose=false` |
+| GET | `/api/activity/my-threads` | Threads you started | `?count=20&include_replies=true&verbose=false` |
 
 ## Users
 

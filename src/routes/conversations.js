@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { getThread, getContext } = require('../controllers/conversationController');
-const { validateChannelId, validateTimestamp, handleValidationErrors } = require('../middleware/validator');
+const { validateChannelId, validateTimestamp, validateBoolean, handleValidationErrors } = require('../middleware/validator');
 
 const router = Router();
 
@@ -22,6 +22,10 @@ const router = Router();
  *         schema: { type: string, pattern: '^\d+\.\d+$' }
  *         description: Parent message timestamp
  *         example: "1708340000.123456"
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Complete thread with parent and all replies
@@ -33,6 +37,7 @@ const router = Router();
 router.get('/:channelId/thread/:threadTs',
   validateChannelId,
   validateTimestamp,
+  validateBoolean('verbose'),
   handleValidationErrors,
   getThread
 );
@@ -69,6 +74,10 @@ router.get('/:channelId/thread/:threadTs',
  *           type: integer
  *           default: 5
  *         description: Messages after target (max 10)
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
  *     responses:
  *       200:
  *         description: Messages surrounding the target with optional thread context
@@ -77,6 +86,7 @@ router.get('/:channelId/thread/:threadTs',
  */
 router.get('/:channelId/context',
   validateChannelId,
+  validateBoolean('verbose'),
   handleValidationErrors,
   getContext
 );
