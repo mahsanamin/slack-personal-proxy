@@ -1,5 +1,48 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactMessage, compactContextResult } = require('../utils/compactThread');
+const { ERROR_CODES } = require('../utils/constants');
+
+function parsePermalink(url) {
+  const match = url.match(/\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/);
+  if (!match) return null;
+  return { channelId: match[1], threadTs: `${match[2]}.${match[3]}` };
+}
+
+async function getThreadByPermalink(req, res, next) {
+  try {
+    const { url } = req.query;
+    const parsed = parsePermalink(url || '');
+    if (!parsed) {
+      throw { ...ERROR_CODES.INVALID_PERMALINK };
+    }
+
+    const { messageService } = req.services;
+    const verbose = parseBoolean(req.query.verbose, false);
+
+    const result = await messageService.getCompleteThread(parsed.channelId, parsed.threadTs);
+
+    const parent = verbose ? result.parent : compactMessage(result.parent);
+    const replies = verbose ? result.replies : result.replies.map(compactMessage).filter(Boolean);
+
+    res.json(formatSuccessResponse(
+      {
+        parent,
+        replies,
+        participants: result.participants,
+        reply_count: result.reply_count,
+        channel_id: parsed.channelId,
+        thread_ts: parsed.threadTs,
+      },
+      {
+        cached: result.cached,
+        api_calls_made: result.api_calls_made,
+        complete: !result.truncated,
+      }
+    ));
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function getThread(req, res, next) {
   try {
@@ -119,4 +162,4 @@ async function getContext(req, res, next) {
   }
 }
 
-module.exports = { getThread, getContext };
+module.exports = { getThread, getContext, getThreadByPermalink, parsePermalink };

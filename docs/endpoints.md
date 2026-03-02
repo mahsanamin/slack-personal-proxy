@@ -20,6 +20,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
+| GET | `/api/conversations/permalink` | Thread by Slack permalink URL | `?url=https://...slack.com/archives/C.../p...&verbose=false` |
 | GET | `/api/conversations/:channelId/thread/:threadTs` | Full thread (parent + all replies) | `?verbose=false` |
 | GET | `/api/conversations/:channelId/context` | Messages around a target timestamp | `?message_ts=...&before=5&after=5&verbose=false` |
 

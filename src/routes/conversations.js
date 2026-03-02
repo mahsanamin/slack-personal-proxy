@@ -1,8 +1,39 @@
 const { Router } = require('express');
-const { getThread, getContext } = require('../controllers/conversationController');
+const { getThread, getContext, getThreadByPermalink } = require('../controllers/conversationController');
 const { validateChannelId, validateTimestamp, validateBoolean, handleValidationErrors } = require('../middleware/validator');
 
 const router = Router();
+
+/**
+ * @swagger
+ * /api/conversations/permalink:
+ *   get:
+ *     summary: Fetch thread by Slack permalink URL
+ *     tags: [Conversations]
+ *     parameters:
+ *       - in: query
+ *         name: url
+ *         required: true
+ *         schema: { type: string }
+ *         description: Slack permalink URL
+ *         example: "https://workspace.slack.com/archives/C12345/p1708340000123456"
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
+ *     responses:
+ *       200:
+ *         description: Complete thread with parent and all replies
+ *       400:
+ *         description: Invalid permalink URL
+ *       404:
+ *         description: Thread not found
+ */
+router.get('/permalink',
+  validateBoolean('verbose'),
+  handleValidationErrors,
+  getThreadByPermalink
+);
 
 /**
  * @swagger

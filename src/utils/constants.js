@@ -8,6 +8,7 @@ const ERROR_CODES = Object.freeze({
   INVALID_CHANNEL_ID: { code: 'INVALID_CHANNEL_ID', status: 400, message: 'Invalid channel ID format.' },
   INVALID_COUNT: { code: 'INVALID_COUNT', status: 400, message: 'Count must be between 1 and the maximum allowed value.' },
   INVALID_TIMESTAMP: { code: 'INVALID_TIMESTAMP', status: 400, message: 'Invalid Slack message timestamp format.' },
+  INVALID_PERMALINK: { code: 'INVALID_PERMALINK', status: 400, message: 'Invalid Slack permalink URL. Expected format: https://<workspace>.slack.com/archives/<channelId>/p<timestamp>' },
 
   // Authorization errors
   IP_NOT_ALLOWED: { code: 'IP_NOT_ALLOWED', status: 403, message: 'Access denied. Your IP is not in the allowlist.' },
