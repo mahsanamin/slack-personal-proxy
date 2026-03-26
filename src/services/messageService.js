@@ -337,7 +337,8 @@ class MessageService {
     let allMessages = [];
     let cursor = null;
     let apiCalls = 0;
-    const perPage = Math.min(count, 200);
+    // Request count + 1 because Slack always includes the parent as the first message
+    const perPage = Math.min(count + 1, 200);
 
     do {
       const batch = await this.slack.getThreadReplies(channelId, threadTs, perPage, cursor, oldest);
