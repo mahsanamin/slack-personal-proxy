@@ -60,6 +60,12 @@ const validateThreadTs = body('thread_ts')
   .matches(TIMESTAMP_REGEX)
   .withMessage('Invalid thread_ts format. Expected format: 1234567890.123456');
 
+const validateOptionalTimestamp = (field) =>
+  query(field)
+    .optional()
+    .matches(TIMESTAMP_REGEX)
+    .withMessage(`${field} must be a valid Slack timestamp (e.g. 1234567890.123456).`);
+
 const validateEmail = query('email')
   .notEmpty()
   .withMessage('Email is required.')
@@ -75,6 +81,7 @@ module.exports = {
   validateSortOrder,
   validateMessageText,
   validateThreadTs,
+  validateOptionalTimestamp,
   validateEmail,
   handleValidationErrors,
 };

@@ -1,5 +1,5 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
-const { compactRecentMessage } = require('../utils/compactThread');
+const { compactRecentMessage, compactMessage } = require('../utils/compactThread');
 
 async function listChannels(req, res, next) {
   try {
@@ -69,4 +69,35 @@ async function getRecentMessages(req, res, next) {
   }
 }
 
-module.exports = { listChannels, getChannelInfo, getRecentMessages };
+async function getThreadReplies(req, res, next) {
+  try {
+    const { messageService } = req.services;
+    const { channelId, threadTs } = req.params;
+    const count = parseInt(req.query.count, 10) || 50;
+    const oldest = req.query.oldest || null;
+    const verbose = parseBoolean(req.query.verbose, false);
+
+    const result = await messageService.getThreadReplies(channelId, threadTs, count, oldest);
+
+    const parentMessage = verbose ? result.parent_message : compactMessage(result.parent_message);
+    const replies = verbose ? result.replies : result.replies.map(compactMessage).filter(Boolean);
+
+    res.json(formatSuccessResponse(
+      {
+        channel_id: result.channel_id,
+        thread_ts: result.thread_ts,
+        parent_message: parentMessage,
+        replies,
+        reply_count: result.reply_count,
+      },
+      {
+        cached: result.cached,
+        api_calls_made: result.api_calls_made,
+      }
+    ));
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { listChannels, getChannelInfo, getRecentMessages, getThreadReplies };

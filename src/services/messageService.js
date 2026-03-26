@@ -319,6 +319,72 @@ class MessageService {
     return { ...threadData, cached: false };
   }
 
+  async getThreadReplies(channelId, threadTs, count = 50, oldest = null) {
+    logger.info(`Fetching thread replies ${threadTs} in ${channelId} (count=${count}, oldest=${oldest || 'none'})`);
+
+    const cacheKey = oldest
+      ? null // Don't cache filtered requests
+      : CACHE_PREFIXES.THREAD + `${channelId}:${threadTs}:replies:${count}`;
+
+    if (cacheKey) {
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        logger.info(`Using cached thread replies ${threadTs}`);
+        return { ...cached, cached: true };
+      }
+    }
+
+    let allMessages = [];
+    let cursor = null;
+    let apiCalls = 0;
+    const perPage = Math.min(count, 200);
+
+    do {
+      const batch = await this.slack.getThreadReplies(channelId, threadTs, perPage, cursor, oldest);
+      apiCalls++;
+      allMessages = allMessages.concat(batch.messages || []);
+
+      if (!batch.has_more || allMessages.length >= count + 1) {
+        break;
+      }
+      cursor = batch.next_cursor;
+    } while (cursor);
+
+    if (allMessages.length === 0) {
+      throw { ...ERROR_CODES.THREAD_NOT_FOUND };
+    }
+
+    // First message is the parent
+    const parentRaw = allMessages[0];
+    const repliesRaw = allMessages.slice(1, count + 1);
+
+    const parentUserName = await this.getUserName(parentRaw.user);
+    const enrichedReplies = await Promise.all(
+      repliesRaw.map(async (reply) => ({
+        ...reply,
+        user_name: await this.getUserName(reply.user),
+      }))
+    );
+
+    const result = {
+      channel_id: channelId,
+      thread_ts: threadTs,
+      parent_message: {
+        ...parentRaw,
+        user_name: parentUserName,
+      },
+      replies: enrichedReplies,
+      reply_count: enrichedReplies.length,
+      api_calls_made: apiCalls,
+    };
+
+    if (cacheKey) {
+      this.cache.set(cacheKey, result, config.cache.threadTtl);
+    }
+
+    return { ...result, cached: false };
+  }
+
   async sendMessage(channelId, text, threadTs = null) {
     const isDm = channelId.startsWith('D');
     if (isDm) {

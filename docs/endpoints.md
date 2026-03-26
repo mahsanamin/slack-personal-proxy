@@ -9,6 +9,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 | GET | `/api/channels` | List all channels | `?type=public_channel,private_channel` |
 | GET | `/api/channels/:channelId/info` | Channel details | — |
 | GET | `/api/channels/:channelId/recent-messages` | Recent messages with optional thread expansion | `?count=20&include_threads=true&verbose=false` |
+| GET | `/api/channels/:channelId/thread/:threadTs` | Thread replies by channel and timestamp | `?count=50&oldest=...&verbose=false` |
 
 ## Messages
 

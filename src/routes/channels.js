@@ -1,6 +1,6 @@
 const { Router } = require('express');
-const { listChannels, getChannelInfo, getRecentMessages } = require('../controllers/channelController');
-const { validateChannelId, validateCount, validateBoolean, handleValidationErrors } = require('../middleware/validator');
+const { listChannels, getChannelInfo, getRecentMessages, getThreadReplies } = require('../controllers/channelController');
+const { validateChannelId, validateCount, validateBoolean, validateTimestamp, validateOptionalTimestamp, handleValidationErrors } = require('../middleware/validator');
 
 const router = Router();
 
@@ -100,6 +100,54 @@ router.get('/:channelId/recent-messages',
   validateBoolean('verbose'),
   handleValidationErrors,
   getRecentMessages
+);
+
+/**
+ * @swagger
+ * /api/channels/{channelId}/thread/{threadTs}:
+ *   get:
+ *     summary: Get thread replies by channel and timestamp
+ *     tags: [Channels]
+ *     parameters:
+ *       - in: path
+ *         name: channelId
+ *         required: true
+ *         schema: { type: string }
+ *         example: C12345
+ *       - in: path
+ *         name: threadTs
+ *         required: true
+ *         schema: { type: string, pattern: '^\d+\.\d+$' }
+ *         description: Parent message timestamp
+ *         example: "1708340000.123456"
+ *       - in: query
+ *         name: count
+ *         schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+ *         description: Max number of replies to return (1-200)
+ *       - in: query
+ *         name: oldest
+ *         schema: { type: string }
+ *         description: Only return replies newer than this timestamp
+ *       - in: query
+ *         name: verbose
+ *         schema: { type: boolean, default: false }
+ *         description: Return full Slack message objects (default compact)
+ *     responses:
+ *       200:
+ *         description: Thread parent and replies
+ *       400:
+ *         description: Invalid parameters
+ *       404:
+ *         description: Thread not found
+ */
+router.get('/:channelId/thread/:threadTs',
+  validateChannelId,
+  validateTimestamp,
+  validateCount(1, 200, 50),
+  validateOptionalTimestamp('oldest'),
+  validateBoolean('verbose'),
+  handleValidationErrors,
+  getThreadReplies
 );
 
 module.exports = router;
