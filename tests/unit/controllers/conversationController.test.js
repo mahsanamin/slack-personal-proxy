@@ -2,7 +2,7 @@ const { parsePermalink } = require('../../../src/controllers/conversationControl
 
 describe('parsePermalink', () => {
   test('parses standard permalink', () => {
-    const result = parsePermalink('https://wego.slack.com/archives/C0899FT59L5/p1772450867520709');
+    const result = parsePermalink('https://myteam.slack.com/archives/C0899FT59L5/p1772450867520709');
     expect(result).toEqual({ channelId: 'C0899FT59L5', threadTs: '1772450867.520709' });
   });
 
@@ -18,6 +18,6 @@ describe('parsePermalink', () => {
   });
 
   test('returns null for URL missing timestamp', () => {
-    expect(parsePermalink('https://wego.slack.com/archives/C123')).toBeNull();
+    expect(parsePermalink('https://myteam.slack.com/archives/C123')).toBeNull();
   });
 });
