@@ -16,6 +16,8 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 | Method | Path | Description | Body |
 |--------|------|-------------|------|
 | POST | `/api/messages/:channelId/send` | Send message (write-gated) | `{ "text": "...", "thread_ts": "..." }` |
+| GET | `/api/messages/:channelId/history` | Message history from channel/DM | `?count=100&oldest=...&latest=...&verbose=false` |
+| DELETE | `/api/messages/:channelId/:messageTs` | Delete a message (write-gated) | — |
 
 ## Conversations
 

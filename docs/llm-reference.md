@@ -28,7 +28,9 @@ Base URL: `https://<host>:8282`. All `/api/*` routes require header `X-API-Key: 
 - `GET /api/activity/my-threads` — Threads you started. `?count=20&includeReplies=true&verbose=false`
 
 ### Messages
+- `GET /api/messages/:channelId/history` — Message history from channel/DM. `?count=100&oldest=<ts>&latest=<ts>&verbose=false`
 - `POST /api/messages/:channelId/send` — Send message (write-gated). Body: `{ "text": "...", "thread_ts": "..." }`
+- `DELETE /api/messages/:channelId/:messageTs` — Delete a message (write-gated).
 
 ### Users
 - `GET /api/users` — List workspace users. `?include_bots=false`

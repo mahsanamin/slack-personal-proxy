@@ -386,6 +386,68 @@ class MessageService {
     return { ...result, cached: false };
   }
 
+  async getMessageHistory(channelId, count = 100, oldest = null, latest = null) {
+    logger.info(`Fetching message history from ${channelId} (count=${count}, oldest=${oldest || 'none'}, latest=${latest || 'none'})`);
+
+    let allMessages = [];
+    let cursor = null;
+    let apiCalls = 0;
+    let hasMore = false;
+
+    do {
+      const batch = await this.slack.getConversationHistory(channelId, Math.min(count - allMessages.length, 200), cursor, oldest, latest);
+      apiCalls++;
+      allMessages = allMessages.concat(batch.messages || []);
+
+      if (!batch.has_more || allMessages.length >= count) {
+        hasMore = batch.has_more || false;
+        break;
+      }
+      cursor = batch.next_cursor;
+    } while (cursor);
+
+    allMessages = allMessages.slice(0, count);
+
+    const enriched = await Promise.all(
+      allMessages.map(async (msg) => ({
+        ...msg,
+        user_name: await this.getUserName(msg.user),
+      }))
+    );
+
+    return {
+      messages: enriched,
+      has_more: hasMore,
+      api_calls_made: apiCalls,
+    };
+  }
+
+  async deleteMessage(channelId, messageTs) {
+    if (!config.enableWriteOps) {
+      throw { ...ERROR_CODES.WRITE_OPS_DISABLED };
+    }
+
+    const isDm = channelId.startsWith('D');
+    if (isDm) {
+      const userId = await this.whitelist.resolveUserIdFromDmChannel(channelId);
+      if (!userId) {
+        throw { ...ERROR_CODES.USER_NOT_FOUND, details: { channel: channelId } };
+      }
+      const dmCheck = this.whitelist.canSendDmToUser(userId);
+      if (!dmCheck.allowed) {
+        throw dmCheck.error;
+      }
+    } else {
+      const writeCheck = this.whitelist.canWriteChannel(channelId);
+      if (!writeCheck.allowed) {
+        throw writeCheck.error;
+      }
+    }
+
+    logger.info(`Deleting message ${messageTs} from ${channelId}`);
+    return await this.slack.deleteMessage(channelId, messageTs);
+  }
+
   async sendMessage(channelId, text, threadTs = null) {
     const isDm = channelId.startsWith('D');
     if (isDm) {

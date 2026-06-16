@@ -11,15 +11,44 @@ class SlackClient {
     this.currentUserName = null;
     this.teamId = null;
     this.teamName = null;
+    this._lastRequestTime = 0;
+    this._requestQueue = Promise.resolve();
+    this._throttleMs = config.slackThrottleMs || 100;
+  }
+
+  /**
+   * Throttle Slack API calls to avoid hitting rate limits.
+   * Serializes requests with a minimum delay between each call.
+   */
+  _throttle(fn) {
+    this._requestQueue = this._requestQueue.then(async () => {
+      const now = Date.now();
+      const elapsed = now - this._lastRequestTime;
+      if (elapsed < this._throttleMs) {
+        await new Promise(r => setTimeout(r, this._throttleMs - elapsed));
+      }
+      this._lastRequestTime = Date.now();
+      return fn();
+    });
+    return this._requestQueue;
   }
 
   async initialize() {
+    const clientOptions = {
+      retryConfig: {
+        retries: 3,
+        factor: 2,
+        randomize: true,
+      },
+    };
+
     if (config.slack.botToken) {
-      this.client = new WebClient(config.slack.botToken);
+      this.client = new WebClient(config.slack.botToken, clientOptions);
       this.authMethod = 'bot_token';
       logger.info(`Using bot token auth (${maskToken(config.slack.botToken)})`);
     } else if (config.slack.cookie && config.slack.token) {
       this.client = new WebClient(config.slack.token, {
+        ...clientOptions,
         headers: {
           'Cookie': `d=${config.slack.cookie}`,
         },
@@ -47,40 +76,47 @@ class SlackClient {
     return result;
   }
 
-  async getConversationHistory(channelId, limit = 100, cursor = null, oldest = null) {
-    const params = { channel: channelId, limit };
-    if (cursor) params.cursor = cursor;
-    if (oldest) params.oldest = oldest;
+  async getConversationHistory(channelId, limit = 100, cursor = null, oldest = null, latest = null) {
+    return this._throttle(async () => {
+      const params = { channel: channelId, limit };
+      if (cursor) params.cursor = cursor;
+      if (oldest) params.oldest = oldest;
+      if (latest) params.latest = latest;
 
-    const result = await this.client.conversations.history(params);
-    return {
-      messages: result.messages || [],
-      has_more: result.has_more || false,
-      next_cursor: result.response_metadata?.next_cursor || null,
-    };
+      const result = await this.client.conversations.history(params);
+      return {
+        messages: result.messages || [],
+        has_more: result.has_more || false,
+        next_cursor: result.response_metadata?.next_cursor || null,
+      };
+    });
   }
 
   async getMessage(channelId, ts) {
-    const result = await this.client.conversations.history({
-      channel: channelId,
-      latest: ts,
-      inclusive: true,
-      limit: 1,
+    return this._throttle(async () => {
+      const result = await this.client.conversations.history({
+        channel: channelId,
+        latest: ts,
+        inclusive: true,
+        limit: 1,
+      });
+      return result.messages?.[0] || null;
     });
-    return result.messages?.[0] || null;
   }
 
   async getThreadReplies(channelId, threadTs, limit = 100, cursor = null, oldest = null) {
-    const params = { channel: channelId, ts: threadTs, limit };
-    if (cursor) params.cursor = cursor;
-    if (oldest) params.oldest = oldest;
+    return this._throttle(async () => {
+      const params = { channel: channelId, ts: threadTs, limit };
+      if (cursor) params.cursor = cursor;
+      if (oldest) params.oldest = oldest;
 
-    const result = await this.client.conversations.replies(params);
-    return {
-      messages: result.messages || [],
-      has_more: result.has_more || false,
-      next_cursor: result.response_metadata?.next_cursor || null,
-    };
+      const result = await this.client.conversations.replies(params);
+      return {
+        messages: result.messages || [],
+        has_more: result.has_more || false,
+        next_cursor: result.response_metadata?.next_cursor || null,
+      };
+    });
   }
 
   /**
@@ -121,70 +157,93 @@ class SlackClient {
   }
 
   async searchMessages(query, count = 20, page = 1, sort = 'timestamp', sortDir = 'desc') {
-    const result = await this.client.search.messages({
-      query,
-      count,
-      page,
-      sort,
-      sort_dir: sortDir,
-    });
+    return this._throttle(async () => {
+      const result = await this.client.search.messages({
+        query,
+        count,
+        page,
+        sort,
+        sort_dir: sortDir,
+      });
 
-    return {
-      messages: result.messages?.matches || [],
-      total: result.messages?.total || 0,
-      page: result.messages?.pagination?.page || 1,
-      page_count: result.messages?.pagination?.page_count || 1,
-    };
+      return {
+        messages: result.messages?.matches || [],
+        total: result.messages?.total || 0,
+        page: result.messages?.pagination?.page || 1,
+        page_count: result.messages?.pagination?.page_count || 1,
+      };
+    });
   }
 
   async getUserInfo(userId) {
-    const result = await this.client.users.info({ user: userId });
-    return result.user;
+    return this._throttle(async () => {
+      const result = await this.client.users.info({ user: userId });
+      return result.user;
+    });
   }
 
   async listChannels(cursor = null, types = 'public_channel,private_channel') {
-    const params = { types, exclude_archived: true, limit: 200 };
-    if (cursor) params.cursor = cursor;
+    return this._throttle(async () => {
+      const params = { types, exclude_archived: true, limit: 200 };
+      if (cursor) params.cursor = cursor;
 
-    const result = await this.client.conversations.list(params);
-    return {
-      channels: result.channels || [],
-      next_cursor: result.response_metadata?.next_cursor || null,
-    };
+      const result = await this.client.conversations.list(params);
+      return {
+        channels: result.channels || [],
+        next_cursor: result.response_metadata?.next_cursor || null,
+      };
+    });
   }
 
   async listUsers(cursor = null) {
-    const params = { limit: 200 };
-    if (cursor) params.cursor = cursor;
+    return this._throttle(async () => {
+      const params = { limit: 200 };
+      if (cursor) params.cursor = cursor;
 
-    const result = await this.client.users.list(params);
-    return {
-      users: result.members || [],
-      next_cursor: result.response_metadata?.next_cursor || null,
-    };
+      const result = await this.client.users.list(params);
+      return {
+        users: result.members || [],
+        next_cursor: result.response_metadata?.next_cursor || null,
+      };
+    });
   }
 
   async getChannelInfo(channelId) {
-    const result = await this.client.conversations.info({ channel: channelId });
-    return result.channel;
+    return this._throttle(async () => {
+      const result = await this.client.conversations.info({ channel: channelId });
+      return result.channel;
+    });
   }
 
   async lookupUserByEmail(email) {
-    const result = await this.client.users.lookupByEmail({ email });
-    return result.user;
+    return this._throttle(async () => {
+      const result = await this.client.users.lookupByEmail({ email });
+      return result.user;
+    });
   }
 
   async openDmChannel(userId) {
-    const result = await this.client.conversations.open({ users: userId });
-    return result.channel;
+    return this._throttle(async () => {
+      const result = await this.client.conversations.open({ users: userId });
+      return result.channel;
+    });
+  }
+
+  async deleteMessage(channelId, ts) {
+    return this._throttle(async () => {
+      const result = await this.client.chat.delete({ channel: channelId, ts });
+      return { ok: result.ok, channel: result.channel, ts: result.ts };
+    });
   }
 
   async postMessage(channel, text, threadTs = null) {
-    const params = { channel, text };
-    if (threadTs) params.thread_ts = threadTs;
+    return this._throttle(async () => {
+      const params = { channel, text };
+      if (threadTs) params.thread_ts = threadTs;
 
-    const result = await this.client.chat.postMessage(params);
-    return result;
+      const result = await this.client.chat.postMessage(params);
+      return result;
+    });
   }
 }
 

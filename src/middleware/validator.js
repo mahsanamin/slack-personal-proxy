@@ -60,6 +60,10 @@ const validateThreadTs = body('thread_ts')
   .matches(TIMESTAMP_REGEX)
   .withMessage('Invalid thread_ts format. Expected format: 1234567890.123456');
 
+const validateMessageTs = param('messageTs')
+  .matches(TIMESTAMP_REGEX)
+  .withMessage('Invalid message timestamp format. Expected format: 1234567890.123456');
+
 const validateOptionalTimestamp = (field) =>
   query(field)
     .optional()
@@ -81,6 +85,7 @@ module.exports = {
   validateSortOrder,
   validateMessageText,
   validateThreadTs,
+  validateMessageTs,
   validateOptionalTimestamp,
   validateEmail,
   handleValidationErrors,
