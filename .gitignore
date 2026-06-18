@@ -33,3 +33,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Local DM backups (personal data, never commit)
+backups/
