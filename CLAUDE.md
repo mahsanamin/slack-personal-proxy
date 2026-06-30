@@ -8,6 +8,12 @@ Express proxy over Slack's Web API using cookie auth (xoxc/xoxd). Docker on port
 - `docs/` — Full project docs (architecture, endpoints, config, Slack API notes)
 - `docs/ai_rules/` — Code conventions, patterns, and rules for all code changes
 
+## Workflow (adhoc project — no PR friction)
+
+This is a personal, adhoc project. Skip worktrees and PRs: commit and push changes
+directly to `main`. No feature branches, no PR review step required. This overrides the
+global "use a worktree, never branch in main" preference for THIS repo only.
+
 ## Slack API Gotchas
 
 - `search.messages` does NOT return `thread_ts` or `reply_count` — parse from permalink URL
