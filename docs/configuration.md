@@ -25,7 +25,9 @@ All config is loaded from environment variables (`.env` file). See `.env.example
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window in ms |
-| `RATE_LIMIT_MAX_REQUESTS` | `30` | Max requests per window |
+| `RATE_LIMIT_MAX_REQUESTS` | `200` | Max requests per window |
+| `SLACK_THROTTLE_MS` | `100` | Min ms between Slack API calls (avoids 429s) |
+| `ALLOWED_IPS` | _(empty = localhost only)_ | Comma-separated IPs/CIDR ranges allowed to connect |
 
 ## Whitelist (write-only)
 
@@ -66,4 +68,5 @@ All config is loaded from environment variables (`.env` file). See `.env.example
 |----------|---------|-------------|
 | `ENABLE_WRITE_OPS` | `false` | Toggle message sending |
 | `ENABLE_SWAGGER` | `true` | Toggle `/docs` endpoint |
+| `ENABLE_MCP` | `false` | Toggle MCP server at `/mcp` |
 | `MAX_PAGINATION_CALLS` | `10` | Safety limit for auto-pagination |

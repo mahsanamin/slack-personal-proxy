@@ -8,7 +8,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 |--------|------|-------------|--------------|
 | GET | `/api/channels` | List all channels | `?type=public_channel,private_channel` |
 | GET | `/api/channels/:channelId/info` | Channel details | — |
-| GET | `/api/channels/:channelId/recent-messages` | Recent messages with optional thread expansion | `?count=20&include_threads=true&verbose=false` |
+| GET | `/api/channels/:channelId/recent-messages` | Recent messages with optional thread expansion | `?count=5&includeThreads=true&verbose=false` |
 | GET | `/api/channels/:channelId/thread/:threadTs` | Thread replies by channel and timestamp | `?count=50&oldest=...&verbose=false` |
 
 ## Messages
@@ -25,34 +25,35 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 |--------|------|-------------|--------------|
 | GET | `/api/conversations/permalink` | Thread by Slack permalink URL | `?url=https://...slack.com/archives/C.../p...&verbose=false` |
 | GET | `/api/conversations/:channelId/thread/:threadTs` | Full thread (parent + all replies) | `?verbose=false` |
-| GET | `/api/conversations/:channelId/context` | Messages around a target timestamp | `?message_ts=...&before=5&after=5&verbose=false` |
+| GET | `/api/conversations/:channelId/context` | Messages around a target timestamp | `?messageTs=...&before=5&after=5&verbose=false` |
 
 ## Search
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/search/messages` | Global message search with thread context | `?query=...&count=10&include_threads=true&sort=timestamp&verbose=false` |
+| GET | `/api/search/messages` | Global message search with thread context | `?query=...&count=10&includeThreads=true&sortOrder=timestamp&verbose=false` |
 
 ## Mentions
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/mentions/all` | All @mentions of current user | `?count=20&verbose=false` |
-| GET | `/api/mentions/threads` | Mentions with full thread context | `?count=10&verbose=false` |
-| GET | `/api/mentions/:channelId` | Mentions in a specific channel | `?count=20&verbose=false` |
+| GET | `/api/mentions/all` | All @mentions of current user | `?count=20&includeThreads=true&verbose=false` |
+| GET | `/api/mentions/threads` | Mentions with full thread context | `?count=20&verbose=false` |
+| GET | `/api/mentions/by-channel/:channelId` | Mentions in a specific channel | `?count=20&includeThreads=true&verbose=false` |
 
 ## Activity
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
 | GET | `/api/activity/threads-im-in` | Threads you replied to (with new-reply tracking) | `?count=20&verbose=false` |
-| GET | `/api/activity/my-threads` | Threads you started | `?count=20&include_replies=true&verbose=false` |
+| GET | `/api/activity/my-threads` | Threads you started | `?count=20&includeReplies=true&verbose=false` |
 
 ## Users
 
 | Method | Path | Description | Query Params |
 |--------|------|-------------|--------------|
-| GET | `/api/users` | List workspace users | `?include_bots=false` |
+| GET | `/api/users` | List workspace users | `?includeDeleted=false&includeBots=false` |
+| GET | `/api/users/by-email` | Look up a user by email, returns DM channel ID | `?email=alice@example.com` |
 | GET | `/api/users/:userId/profile` | User profile details | — |
 
 ## Admin

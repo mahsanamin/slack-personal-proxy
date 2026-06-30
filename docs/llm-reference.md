@@ -33,7 +33,8 @@ Base URL: `https://<host>:8282`. All `/api/*` routes require header `X-API-Key: 
 - `DELETE /api/messages/:channelId/:messageTs` — Delete a message (write-gated).
 
 ### Users
-- `GET /api/users` — List workspace users. `?include_bots=false`
+- `GET /api/users` — List workspace users. `?includeDeleted=false&includeBots=false`
+- `GET /api/users/by-email` — Look up a user by email, returns their DM channel ID. `?email=alice@example.com`
 - `GET /api/users/:userId/profile` — User profile details.
 
 ### Admin
@@ -46,7 +47,7 @@ Base URL: `https://<host>:8282`. All `/api/*` routes require header `X-API-Key: 
 
 ## MCP Tools
 
-Server name: `slack-proxy`. These tools call the service layer directly (not HTTP).
+Server name: `slack-personal-proxy`. These tools call the service layer directly (not HTTP).
 
 | Tool | Description | Key Params |
 |------|-------------|------------|
