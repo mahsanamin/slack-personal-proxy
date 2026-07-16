@@ -219,17 +219,54 @@ cmd_hash_password() {
 
 # Install this script as a global `slack-proxy` command (symlink on PATH).
 cmd_install() {
-  local target="${1:-/usr/local/bin/slack-proxy}"
   local src="$SCRIPT_DIR/proxy"
+  local target="${1:-}"
+
+  # If no path given, pick the first sensible bin dir that is ON $PATH.
+  if [ -z "$target" ]; then
+    for d in "/usr/local/bin" "$HOME/.local/bin" "$HOME/bin" "/opt/homebrew/bin"; do
+      case ":$PATH:" in *":$d:"*) target="$d/slack-proxy"; break ;; esac
+    done
+    # Nothing on PATH matched; fall back to /usr/local/bin and warn later.
+    [ -z "$target" ] && target="/usr/local/bin/slack-proxy"
+  fi
+
+  local dir; dir="$(dirname "$target")"
+  mkdir -p "$dir" 2>/dev/null || sudo mkdir -p "$dir"
+
   echo "Linking ${target} -> ${src}"
   if ln -sf "$src" "$target" 2>/dev/null; then
     :
   else
-    echo "Elevated permissions needed for ${target}; using sudo..."
+    echo "Elevated permissions needed for ${dir}; using sudo..."
     sudo ln -sf "$src" "$target"
   fi
-  echo "Installed. From now on, from any directory:"
-  echo "  slack-proxy start | stop | restart | update | status | logs | hash-password"
+
+  if [ ! -e "$target" ]; then
+    echo "ERROR: could not create ${target}. Try: sudo ${CMD_NAME} install"
+    exit 1
+  fi
+
+  echo "Installed at: ${target}"
+
+  # Is that directory actually on PATH?
+  case ":$PATH:" in
+    *":$dir:"*)
+      hash -r 2>/dev/null || true
+      if command -v slack-proxy >/dev/null 2>&1; then
+        echo "Ready. Run:  slack-proxy status"
+      else
+        echo "Linked, but the shell hasn't picked it up. Open a new terminal, or run:  hash -r"
+      fi
+      ;;
+    *)
+      echo ""
+      echo "WARNING: ${dir} is not on your PATH, so 'slack-proxy' won't be found yet."
+      echo "Add this to your ~/.zshrc (or ~/.bashrc), then open a new terminal:"
+      echo "  export PATH=\"${dir}:\$PATH\""
+      echo "Or reinstall into a dir already on PATH, e.g.:  ${CMD_NAME} install /usr/local/bin/slack-proxy"
+      ;;
+  esac
 }
 
 cmd_help() {
