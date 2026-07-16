@@ -28,12 +28,26 @@ load_env() {
   source .env
 }
 
+# The host to reach the published port on. When BIND_ADDRESS is a specific IP
+# (e.g. a Tailscale address), the port is published ONLY on that IP, not on
+# localhost, so health checks must target it. 0.0.0.0 / 127.0.0.1 / unset use localhost.
+health_host() {
+  local b="${BIND_ADDRESS:-127.0.0.1}"
+  if [ -z "$b" ] || [ "$b" = "0.0.0.0" ] || [ "$b" = "127.0.0.1" ]; then
+    echo "localhost"
+  else
+    echo "$b"
+  fi
+}
+
 health_url() {
   local port="${HOST_PORT:-8282}"
+  local host
+  host=$(health_host)
   if [ "${ENABLE_HTTPS:-false}" = "true" ]; then
-    echo "https://localhost:${port}/health"
+    echo "https://${host}:${port}/health"
   else
-    echo "http://localhost:${port}/health"
+    echo "http://${host}:${port}/health"
   fi
 }
 
@@ -87,13 +101,15 @@ show_status() {
     scheme="https"
     opts="-sk"
   fi
+  local host
+  host=$(health_host)
   echo ""
   docker compose -f "$COMPOSE_FILE" ps
   echo ""
-  echo "Service:   ${scheme}://localhost:${port}"
-  echo "Health:    curl ${opts} ${scheme}://localhost:${port}/health"
+  echo "Service:   ${scheme}://${host}:${port}"
+  echo "Health:    curl ${opts} ${scheme}://${host}:${port}/health"
   if [ "${ENABLE_DASHBOARD:-true}" != "false" ]; then
-    echo "Dashboard: ${scheme}://localhost:${port}/dashboard"
+    echo "Dashboard: ${scheme}://${host}:${port}/dashboard"
   fi
 }
 
