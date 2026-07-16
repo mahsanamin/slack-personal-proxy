@@ -68,6 +68,40 @@ class WhitelistService {
     );
   }
 
+  /**
+   * Live-reload the DM allowlist (called by the dashboard when the allowlist changes).
+   * Accepts the merged entry list (.env seed + store additions) and re-resolves to IDs
+   * without restarting the process.
+   */
+  async reload(dmEntries) {
+    this.dmUserEntries = Array.isArray(dmEntries) ? dmEntries : [];
+    this.enforceDm = this.dmUserEntries.length > 0;
+    this.dmUserIds = new Set();
+    this.dmChannelToUserId = new Map();
+
+    if (this.dmUserEntries.length > 0 && this.userNameToId.size === 0) {
+      await this._resolveUsers();
+    }
+
+    for (const entry of this.dmUserEntries) {
+      if (DM_CHANNEL_ID_REGEX.test(entry)) {
+        const userId = await this._resolveUserIdFromDmChannel(entry);
+        if (userId) {
+          this.dmUserIds.add(userId);
+          this.dmChannelToUserId.set(entry, userId);
+        } else {
+          logger.warn(`Could not resolve DM channel to user: ${entry}`);
+        }
+      } else {
+        const id = this._resolveUserEntry(entry);
+        if (id) this.dmUserIds.add(id);
+        else logger.warn(`Could not resolve DM user: ${entry}`);
+      }
+    }
+
+    logger.info(`Whitelist reloaded: dm=${this.dmUserIds.size} users`);
+  }
+
   async _resolveChannels() {
     logger.info('Fetching all channels for whitelist resolution...');
     const result = await this.pagination.fetchAllChannels(this.slack);

@@ -1,8 +1,14 @@
-const crypto = require('crypto');
-const config = require('../config');
+const configStore = require('../services/configStore');
 const { ERROR_CODES } = require('../utils/constants');
 const { formatErrorResponse } = require('../utils/helpers');
 
+/**
+ * API-key auth for /api/* (and /mcp).
+ *
+ * Verification is synchronous and in-memory: the legacy .env API_KEY plus any active
+ * dashboard-minted keys (matched by SHA-256 fingerprint via configStore.verifyApiKey).
+ * Backward compatible — every existing X-API-Key caller keeps working.
+ */
 function authMiddleware(req, res, next) {
   const apiKey = req.headers['x-api-key'];
 
@@ -12,16 +18,14 @@ function authMiddleware(req, res, next) {
     );
   }
 
-  // Use timing-safe comparison to prevent timing attacks
-  const expected = Buffer.from(config.apiKey);
-  const provided = Buffer.from(apiKey);
-
-  if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+  const match = configStore.verifyApiKey(apiKey);
+  if (!match) {
     return res.status(ERROR_CODES.INVALID_API_KEY.status).json(
       formatErrorResponse(ERROR_CODES.INVALID_API_KEY)
     );
   }
 
+  req.apiKey = match;
   next();
 }
 

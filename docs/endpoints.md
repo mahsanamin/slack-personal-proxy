@@ -69,6 +69,30 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 |--------|------|-------------|
 | GET | `/api/auth/test` | Validate credentials and show workspace info |
 
+## Dashboard
+
+Web console at `/dashboard` (static SPA). Auth is a **session cookie** (username + password
+login), NOT the `X-API-Key` header. Enable with `ENABLE_DASHBOARD=true` and set
+`DASHBOARD_USER` / `DASHBOARD_PASSWORD_HASH` (via `npm run set-dashboard-password`).
+All routes are still behind the global IP allowlist.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/dashboard/` | none | SPA shell (HTML/JS/CSS) |
+| GET | `/dashboard/api/bootstrap` | none | Whether dashboard login is configured |
+| POST | `/dashboard/login` | none | Log in, sets session cookie |
+| POST | `/dashboard/logout` | session | Clear session |
+| GET | `/dashboard/api/status` | session | First-run flag + security/exposure panel |
+| POST | `/dashboard/api/setup/test` | session | `auth.test` provided Slack creds (no save) |
+| POST | `/dashboard/api/setup/slack` | session | Test then store Slack creds (encrypted), hot-reload |
+| GET | `/dashboard/api/keys` | session | List API keys (metadata only) |
+| POST | `/dashboard/api/keys` | session | Create a key (secret shown once) |
+| DELETE | `/dashboard/api/keys/:id` | session | Revoke a key |
+| GET | `/dashboard/api/dm-allowlist` | session | List DM-allowed users |
+| POST | `/dashboard/api/dm-allowlist` | session | Add a user (by @name / email / U-id), hot-reload |
+| DELETE | `/dashboard/api/dm-allowlist/:id` | session | Remove a user |
+| GET | `/dashboard/api/summary` | session | Aggregated mentions + threads for the landing view |
+
 ## System
 
 | Method | Path | Description |

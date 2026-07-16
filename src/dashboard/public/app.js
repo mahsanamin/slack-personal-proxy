@@ -1,0 +1,412 @@
+'use strict';
+
+// ---- tiny DOM helpers ----
+function el(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (v == null) continue;
+      if (k === 'class') node.className = v;
+      else if (k === 'text') node.textContent = v;
+      else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    }
+  }
+  for (const c of [].concat(children || [])) {
+    if (c == null) continue;
+    node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return node;
+}
+const app = () => document.getElementById('app');
+function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+function safeUrl(u) { return typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null; }
+function timeAgo(iso) {
+  if (!iso) return '';
+  const d = typeof iso === 'string' ? Date.parse(iso) : (iso * 1000);
+  if (!d) return '';
+  const s = Math.floor((Date.now() - d) / 1000);
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+
+// ---- API ----
+async function api(path, opts) {
+  const res = await fetch('/dashboard' + path, Object.assign({
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+  }, opts || {}));
+  let body = null;
+  try { body = await res.json(); } catch { /* ignore */ }
+  if (!res.ok) {
+    const err = new Error((body && body.error && body.error.message) || res.statusText);
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  return body && body.data !== undefined ? body.data : body;
+}
+
+// ---- boot ----
+let STATE = { tab: 'overview', status: null };
+
+async function boot() {
+  try {
+    STATE.status = await api('/api/status');
+    renderMain();
+  } catch (err) {
+    if (err.status === 401) {
+      const bs = await api('/api/bootstrap').catch(() => ({ dashboardConfigured: false }));
+      bs.dashboardConfigured ? renderLogin() : renderNotConfigured();
+    } else {
+      renderError(err.message);
+    }
+  }
+}
+
+function renderError(msg) {
+  clear(app());
+  app().appendChild(el('div', { class: 'content' }, [el('div', { class: 'notice err', text: msg })]));
+}
+
+function renderNotConfigured() {
+  clear(app());
+  app().appendChild(el('div', { class: 'login-wrap' }, [
+    el('div', { class: 'login-card' }, [
+      el('h1', { text: 'Dashboard not configured' }),
+      el('p', { class: 'sub', text: 'Set these in your .env, then restart the proxy:' }),
+      el('div', { class: 'keybox mono' }, [
+        'DASHBOARD_USER=you', el('br'),
+        'DASHBOARD_PASSWORD_HASH=<run: npm run set-dashboard-password>', el('br'),
+        'DASHBOARD_MASTER_KEY=<32+ char passphrase>',
+      ]),
+    ]),
+  ]));
+}
+
+// ---- login ----
+function renderLogin() {
+  clear(app());
+  const msg = el('div');
+  const u = el('input', { type: 'text', id: 'lu', autocomplete: 'username' });
+  const p = el('input', { type: 'password', id: 'lp', autocomplete: 'current-password' });
+  const submit = async () => {
+    clear(msg);
+    try {
+      await api('/login', { method: 'POST', body: JSON.stringify({ user: u.value, password: p.value }) });
+      boot();
+    } catch (err) {
+      msg.appendChild(el('div', { class: 'notice err', text: err.message }));
+    }
+  };
+  p.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  app().appendChild(el('div', { class: 'login-wrap' }, [
+    el('div', { class: 'login-card' }, [
+      el('h1', { text: '🛰️ Slack Proxy' }),
+      el('p', { class: 'sub', text: 'Sign in to the management console' }),
+      msg,
+      el('label', { text: 'Username' }), u,
+      el('label', { text: 'Password' }), p,
+      el('div', { class: 'actions' }, [el('button', { text: 'Sign in', onclick: submit })]),
+    ]),
+  ]));
+}
+
+// ---- main shell ----
+const TABS = [
+  ['overview', 'Overview'],
+  ['keys', 'API Keys'],
+  ['dm', 'DM Allowlist'],
+  ['setup', 'Slack Setup'],
+  ['security', 'Security'],
+];
+
+function renderMain() {
+  clear(app());
+  const s = STATE.status || {};
+  const healthy = s.slack && s.slack.auth === 'valid';
+  const topbar = el('div', { class: 'topbar' }, [
+    el('div', { class: 'brand' }, [
+      el('span', { class: 'dot' + (healthy ? '' : ' bad') }),
+      el('span', { text: '🛰️ Slack Proxy Dashboard' }),
+      s.slack && s.slack.team ? el('span', { class: 'muted', text: '· ' + s.slack.team }) : null,
+    ]),
+    el('button', {
+      class: 'secondary small', text: 'Log out',
+      onclick: async () => { await api('/logout', { method: 'POST' }).catch(() => {}); renderLogin(); },
+    }),
+  ]);
+  const tabs = el('div', { class: 'tabs' }, TABS.map(([id, label]) =>
+    el('button', {
+      class: 'tab' + (STATE.tab === id ? ' active' : ''), text: label,
+      onclick: () => { STATE.tab = id; renderMain(); },
+    })
+  ));
+  const content = el('div', { class: 'content' }, [el('div', { class: 'spinner', text: 'Loading…' })]);
+  app().appendChild(topbar);
+  app().appendChild(tabs);
+  app().appendChild(content);
+
+  const view = { overview: viewOverview, keys: viewKeys, dm: viewDm, setup: viewSetup, security: viewSecurity }[STATE.tab];
+  view(content);
+}
+
+// ---- Overview ----
+async function viewOverview(root) {
+  if (STATE.status && STATE.status.firstRun) {
+    clear(root);
+    root.appendChild(el('div', { class: 'notice warn', text: 'Slack is not connected yet. Go to “Slack Setup” to paste your tokens.' }));
+    return;
+  }
+  try {
+    const d = await api('/api/summary?count=12');
+    clear(root);
+    root.appendChild(el('div', { class: 'grid cols-2' }, [
+      mentionCard('Recent mentions', d.mentions),
+      threadCard('Mention threads', d.mentionThreads),
+      threadCard("Threads I'm in", d.threadsImIn),
+      threadCard('Threads I started', d.myThreads),
+    ]));
+  } catch (err) {
+    clear(root);
+    root.appendChild(el('div', { class: 'notice err', text: err.message }));
+  }
+}
+
+function cardShell(title, items, renderItem) {
+  const list = Array.isArray(items) ? items : [];
+  return el('div', { class: 'card' }, [
+    el('h2', {}, [title, el('span', { class: 'count', text: String(list.length) })]),
+    list.length
+      ? el('div', {}, list.map(renderItem))
+      : el('div', { class: 'empty', text: (items && items.error) ? ('Error: ' + items.error) : 'Nothing here.' }),
+  ]);
+}
+function mentionCard(title, items) {
+  return cardShell(title, items, (m) => {
+    const link = safeUrl(m.permalink);
+    return el('div', { class: 'item' }, [
+      el('div', { class: 'meta' }, [
+        el('span', { text: '#' + (m.channel_name || m.channel_id || '?') }),
+        el('span', { text: m.user_name ? '@' + m.user_name : '' }),
+        el('span', { text: timeAgo(m.created_at) }),
+        link ? el('a', { href: link, target: '_blank', rel: 'noopener', text: 'open ↗' }) : null,
+      ]),
+      el('div', { class: 'text', text: m.text || '' }),
+    ]);
+  });
+}
+function threadCard(title, items) {
+  return cardShell(title, items, (t) => {
+    const parent = t.parent_message || {};
+    const stats = t.thread_stats || {};
+    return el('div', { class: 'item' }, [
+      el('div', { class: 'meta' }, [
+        el('span', { text: '#' + (t.channel_name || t.channel_id || '?') }),
+        parent.user_name ? el('span', { text: '@' + parent.user_name }) : null,
+        (stats.reply_count != null) ? el('span', { text: stats.reply_count + ' replies' }) : null,
+      ]),
+      el('div', { class: 'text', text: (parent.text || '').slice(0, 280) }),
+    ]);
+  });
+}
+
+// ---- API Keys ----
+async function viewKeys(root) {
+  try {
+    const d = await api('/api/keys');
+    clear(root);
+    const created = el('div');
+    const label = el('input', { type: 'text', id: 'kl', placeholder: 'e.g. my-laptop, cron-job' });
+    const create = async () => {
+      try {
+        const r = await api('/api/keys', { method: 'POST', body: JSON.stringify({ label: label.value || 'unnamed' }) });
+        clear(created);
+        created.appendChild(el('div', { class: 'notice ok' }, [
+          el('div', { text: r.warning }),
+          el('div', { class: 'keybox mono', text: r.key }),
+        ]));
+        label.value = '';
+        viewKeys(root === document ? root : document.querySelector('.content'));
+      } catch (err) { created.appendChild(el('div', { class: 'notice err', text: err.message })); }
+    };
+    root.appendChild(el('div', { class: 'grid' }, [
+      el('div', { class: 'card' }, [
+        el('h2', { text: 'Create API key' }),
+        el('p', { class: 'muted', text: 'Keys are shown once, then stored only as a hash. Use them in the X-API-Key header.' }),
+        created,
+        el('label', { text: 'Label' }), label,
+        el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('h2', {}, ['Existing keys', el('span', { class: 'count', text: String(d.keys.length) })]),
+        d.keys.length ? el('div', {}, d.keys.map((k) => keyRow(k, root))) : el('div', { class: 'empty', text: 'No keys yet.' }),
+      ]),
+    ]));
+  } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }
+}
+function keyRow(k, root) {
+  const revoked = !!k.revokedAt;
+  return el('div', { class: 'item' }, [
+    el('div', { class: 'row', style: 'justify-content:space-between' }, [
+      el('div', {}, [
+        el('div', {}, [el('strong', { text: k.label }), ' ', el('span', { class: 'mono muted', text: k.prefix })]),
+        el('div', { class: 'meta' }, [
+          el('span', { text: 'created ' + timeAgo(k.createdAt) }),
+          el('span', { text: k.lastUsedAt ? 'used ' + timeAgo(k.lastUsedAt) : 'never used' }),
+        ]),
+      ]),
+      revoked
+        ? el('span', { class: 'badge red', text: 'revoked' })
+        : el('button', {
+            class: 'danger small', text: 'Revoke',
+            onclick: async () => {
+              if (!confirm('Revoke key "' + k.label + '"? Clients using it stop working immediately.')) return;
+              await api('/api/keys/' + k.id, { method: 'DELETE' });
+              viewKeys(document.querySelector('.content'));
+            },
+          }),
+    ]),
+  ]);
+}
+
+// ---- DM allowlist ----
+async function viewDm(root) {
+  try {
+    const d = await api('/api/dm-allowlist');
+    clear(root);
+    const msg = el('div');
+    const entry = el('input', { type: 'text', placeholder: '@username, email, or U0123ABC' });
+    const add = async () => {
+      clear(msg);
+      try {
+        await api('/api/dm-allowlist', { method: 'POST', body: JSON.stringify({ entry: entry.value }) });
+        entry.value = '';
+        viewDm(document.querySelector('.content'));
+      } catch (err) { msg.appendChild(el('div', { class: 'notice err', text: err.message })); }
+    };
+    root.appendChild(el('div', { class: 'grid' }, [
+      el('div', { class: 'card' }, [
+        el('h2', { text: 'Add person allowed to receive DMs' }),
+        el('p', { class: 'muted', text: 'By default only you can be DMed. Add people here — changes apply live, no restart.' }),
+        msg,
+        el('label', { text: 'User' }), entry,
+        el('div', { class: 'actions' }, [el('button', { text: 'Add', onclick: add })]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('h2', {}, ['Allowed users', el('span', { class: 'count', text: String(d.users.length) })]),
+        d.envSeed && d.envSeed.length
+          ? el('p', { class: 'muted', text: 'From .env (read-only): ' + d.envSeed.join(', ') })
+          : null,
+        d.users.length ? el('div', {}, d.users.map((u) => dmRow(u))) : el('div', { class: 'empty', text: 'No users added from the dashboard.' }),
+      ]),
+    ]));
+  } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }
+}
+function dmRow(u) {
+  return el('div', { class: 'item row', style: 'justify-content:space-between' }, [
+    el('div', {}, [
+      el('strong', { text: u.name || u.entry }),
+      u.userId ? el('span', { class: 'mono muted', text: '  ' + u.userId }) : null,
+      el('div', { class: 'meta' }, [el('span', { text: 'added ' + timeAgo(u.addedAt) })]),
+    ]),
+    el('button', {
+      class: 'danger small', text: 'Remove',
+      onclick: async () => { await api('/api/dm-allowlist/' + u.id, { method: 'DELETE' }); viewDm(document.querySelector('.content')); },
+    }),
+  ]);
+}
+
+// ---- Slack Setup ----
+async function viewSetup(root) {
+  clear(root);
+  const s = STATE.status || {};
+  const msg = el('div');
+  const cookie = el('input', { type: 'password', placeholder: 'xoxd-…' });
+  const token = el('input', { type: 'password', placeholder: 'xoxc-…' });
+  const bot = el('input', { type: 'password', placeholder: 'xoxb-… (optional, instead of cookie+token)' });
+
+  const getCreds = () => ({ cookie: cookie.value.trim(), token: token.value.trim(), botToken: bot.value.trim() });
+  const test = async () => {
+    clear(msg);
+    try {
+      const r = await api('/api/setup/test', { method: 'POST', body: JSON.stringify(getCreds()) });
+      msg.appendChild(el('div', { class: 'notice ok', text: `Valid — ${r.user} @ ${r.team}` }));
+    } catch (err) { msg.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
+  };
+  const save = async () => {
+    clear(msg);
+    try {
+      const r = await api('/api/setup/slack', { method: 'POST', body: JSON.stringify(getCreds()) });
+      msg.appendChild(el('div', { class: 'notice ok', text: `Saved & connected — ${r.user} @ ${r.team}. Live now, no restart.` }));
+      STATE.status = await api('/api/status');
+    } catch (err) { msg.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
+  };
+
+  root.appendChild(el('div', { class: 'grid' }, [
+    !s.security || !s.security.masterKeySet
+      ? el('div', { class: 'notice warn', text: 'DASHBOARD_MASTER_KEY is not set. Set it in .env and restart before saving tokens — otherwise tokens can only be set via the CLI.' })
+      : null,
+    el('div', { class: 'card' }, [
+      el('h2', { text: 'Connect Slack' }),
+      el('p', { class: 'muted' }, [
+        'Get these from DevTools on ', el('span', { class: 'mono', text: 'app.slack.com' }),
+        '. Cookie ', el('span', { class: 'mono', text: 'd' }), ' (xoxd-) under Application ▸ Cookies; token via console: ',
+        el('span', { class: 'mono', text: 'Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token' }), '.',
+      ]),
+      msg,
+      el('label', { text: 'SLACK_COOKIE (xoxd-)' }), cookie,
+      el('label', { text: 'SLACK_TOKEN (xoxc-)' }), token,
+      el('label', { text: 'SLACK_BOT_TOKEN (xoxb-, optional)' }), bot,
+      el('div', { class: 'actions' }, [
+        el('button', { class: 'secondary', text: 'Test connection', onclick: test }),
+        el('button', { text: 'Save & connect', onclick: save }),
+      ]),
+      el('p', { class: 'muted', text: 'Current: ' + (s.slack ? `${s.slack.auth}${s.slack.currentUser ? ' (' + s.slack.currentUser + ')' : ''} · source: ${s.slack.credsSource}` : 'unknown') }),
+    ]),
+  ]));
+}
+function reason(err) {
+  const r = err.body && err.body.error && err.body.error.details && err.body.error.details.reason;
+  return r ? ' — ' + r : '';
+}
+
+// ---- Security ----
+async function viewSecurity(root) {
+  try {
+    STATE.status = await api('/api/status');
+    const sec = STATE.status.security || {};
+    const slack = STATE.status.slack || {};
+    clear(root);
+    const warn = sec.exposedOnNetwork && !sec.httpsEnabled;
+    root.appendChild(el('div', { class: 'grid cols-2' }, [
+      el('div', { class: 'card' }, [
+        el('h2', { text: 'Network exposure' }),
+        warn ? el('div', { class: 'notice warn', text: 'Bound beyond localhost without HTTPS. Use a trusted tunnel + strong secrets.' }) : null,
+        statRow('Bind address', sec.bindAddress, sec.exposedOnNetwork ? 'amber' : 'green'),
+        statRow('Exposed on network', sec.exposedOnNetwork ? 'yes' : 'no (localhost only)', sec.exposedOnNetwork ? 'amber' : 'green'),
+        statRow('HTTPS', sec.httpsEnabled ? 'on' : 'off', sec.httpsEnabled ? 'green' : 'muted'),
+        statRow('IP allowlist', (sec.allowedIps && sec.allowedIps.length) ? sec.allowedIps.join(', ') : 'localhost only', 'muted'),
+        statRow('Swagger /docs', sec.swaggerEnabled ? 'enabled' : 'disabled', 'muted'),
+      ]),
+      el('div', { class: 'card' }, [
+        el('h2', { text: 'Secrets & access' }),
+        statRow('Slack auth', slack.auth, slack.auth === 'valid' ? 'green' : 'red'),
+        statRow('Credential source', slack.credsSource, 'muted'),
+        statRow('Master key (token encryption)', sec.masterKeySet ? 'set' : 'MISSING', sec.masterKeySet ? 'green' : 'red'),
+        statRow('API keys (active / total)', `${sec.apiKeys ? sec.apiKeys.active : 0} / ${sec.apiKeys ? sec.apiKeys.total : 0}`, 'muted'),
+        statRow('DM allowlist size', String(sec.dmAllowlistCount || 0), 'muted'),
+      ]),
+    ]));
+  } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }
+}
+function statRow(k, v, badge) {
+  return el('div', { class: 'statrow' }, [
+    el('span', { class: 'k', text: k }),
+    badge ? el('span', { class: 'badge ' + badge, text: String(v) }) : el('span', { text: String(v) }),
+  ]);
+}
+
+boot();

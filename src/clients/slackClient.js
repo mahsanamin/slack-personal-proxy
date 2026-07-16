@@ -33,7 +33,17 @@ class SlackClient {
     return this._requestQueue;
   }
 
-  async initialize() {
+  /**
+   * Build the Slack WebClient and validate it via auth.test.
+   * @param {object|null} creds Optional { cookie, token, botToken } override (from the
+   *   encrypted store). When omitted, falls back to the .env-derived config.slack values.
+   */
+  async initialize(creds = null) {
+    const source = creds || config.slack;
+    const botToken = source.botToken || '';
+    const cookie = source.cookie || '';
+    const token = source.token || '';
+
     const clientOptions = {
       retryConfig: {
         retries: 3,
@@ -42,19 +52,19 @@ class SlackClient {
       },
     };
 
-    if (config.slack.botToken) {
-      this.client = new WebClient(config.slack.botToken, clientOptions);
+    if (botToken) {
+      this.client = new WebClient(botToken, clientOptions);
       this.authMethod = 'bot_token';
-      logger.info(`Using bot token auth (${maskToken(config.slack.botToken)})`);
-    } else if (config.slack.cookie && config.slack.token) {
-      this.client = new WebClient(config.slack.token, {
+      logger.info(`Using bot token auth (${maskToken(botToken)})`);
+    } else if (cookie && token) {
+      this.client = new WebClient(token, {
         ...clientOptions,
         headers: {
-          'Cookie': `d=${config.slack.cookie}`,
+          'Cookie': `d=${cookie}`,
         },
       });
       this.authMethod = 'cookie';
-      logger.info(`Using cookie-based auth (${maskToken(config.slack.token)})`);
+      logger.info(`Using cookie-based auth (${maskToken(token)})`);
     } else {
       throw new Error(
         'No valid Slack credentials provided. Set either SLACK_BOT_TOKEN or both SLACK_COOKIE and SLACK_TOKEN'
@@ -69,6 +79,26 @@ class SlackClient {
 
     logger.info(`Authenticated as ${this.currentUserName} (${this.currentUserId}) via ${this.authMethod}`);
     logger.info(`Connected to workspace: ${this.teamName} (${this.teamId})`);
+  }
+
+  /** Rebuild the client with new credentials (used by the dashboard hot-reload). */
+  async reinitialize(creds) {
+    return this.initialize(creds);
+  }
+
+  /** Validate arbitrary creds without mutating this client (for the setup wizard's test). */
+  async testCredentials(creds) {
+    const source = creds || config.slack;
+    const clientOptions = { retryConfig: { retries: 1 } };
+    let probe;
+    if (source.botToken) {
+      probe = new WebClient(source.botToken, clientOptions);
+    } else if (source.cookie && source.token) {
+      probe = new WebClient(source.token, { ...clientOptions, headers: { Cookie: `d=${source.cookie}` } });
+    } else {
+      throw new Error('No valid Slack credentials provided');
+    }
+    return probe.auth.test();
   }
 
   async authTest() {

@@ -90,6 +90,34 @@ curl -sk https://localhost:8282/health
 curl -sk -H "X-API-Key: YOUR_KEY" https://localhost:8282/api/auth/test
 ```
 
+## Management Dashboard
+
+A password-protected web console at **`/dashboard`** to run the proxy without editing
+`.env` by hand: view your recent mentions and tagged threads, create & revoke API keys,
+manage the DM allowlist (add more people, applied live), set up Slack tokens securely, and
+check your network-exposure/security status at a glance.
+
+```bash
+# 1. Create the login (writes a scrypt hash to paste into .env)
+npm run set-dashboard-password
+
+# 2. In .env
+ENABLE_DASHBOARD=true
+DASHBOARD_USER=you
+DASHBOARD_PASSWORD_HASH=scrypt$...        # from step 1
+DASHBOARD_MASTER_KEY=<32+ char passphrase># encrypts Slack tokens at rest
+
+# 3. Open it (localhost by default; still behind the IP allowlist)
+open http://localhost:8282/dashboard
+```
+
+Notes:
+- **Login is a session cookie**, separate from the `X-API-Key` used by programmatic clients.
+- **Secrets are never viewable**: Slack tokens are AES-256-GCM encrypted in `data/secrets.enc`
+  (master key lives only in the env); API keys are stored as SHA-256 hashes and shown once.
+- **Backward compatible**: the legacy `.env` `API_KEY` and all existing `X-API-Key` calls keep working.
+- Not network-exposed by default (`BIND_ADDRESS=127.0.0.1` + localhost-only allowlist).
+
 ## API Endpoints
 
 All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.env`.

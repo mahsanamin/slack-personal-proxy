@@ -4,9 +4,20 @@ Express proxy over Slack's Web API using cookie auth (xoxc/xoxd). Docker on port
 
 ## Quick Reference
 
-- `npm test` — Jest (61 tests). `./proxy start|stop|restart|logs|status` to manage Docker.
+- `npm test` — Jest. `./proxy start|stop|restart|logs|status` to manage Docker.
 - `docs/` — Full project docs (architecture, endpoints, config, Slack API notes)
 - `docs/ai_rules/` — Code conventions, patterns, and rules for all code changes
+
+## Management Dashboard
+
+Password-protected web console at `/dashboard` (static SPA in `src/dashboard/public/`, served
+by Express). Mutable state lives in `./data` via the `configStore` singleton
+(`src/services/configStore.js`): API keys as SHA-256 hashes (`apikeys.json`), Slack tokens
+AES-256-GCM encrypted (`secrets.enc`, key from `DASHBOARD_MASTER_KEY`), DM allowlist
+(`dm-allowlist.json`). Changes hot-reload the Slack client + whitelist via configStore events
+(no restart). Dashboard login is a session cookie (`DASHBOARD_USER`/`DASHBOARD_PASSWORD_HASH`),
+separate from `X-API-Key`. Crypto helpers: `src/utils/secureCrypto.js`. The API-key middleware
+(`src/middleware/auth.js`) verifies synchronously against store hashes + the legacy `.env` `API_KEY`.
 
 ## Workflow (adhoc project — no PR friction)
 

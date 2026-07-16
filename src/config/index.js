@@ -30,6 +30,20 @@ const config = Object.freeze({
   // API security
   apiKey: process.env.API_KEY || '',
 
+  // Writable data directory (the one writable mount in the read-only container).
+  // Home for the dashboard's mutable state: apikeys.json, secrets.enc, dm-allowlist.json.
+  dataDir: process.env.PERSISTENT_CACHE_DIR || 'data',
+
+  // Management dashboard
+  dashboard: Object.freeze({
+    enabled: parseBoolean(process.env.ENABLE_DASHBOARD, true),
+    user: process.env.DASHBOARD_USER || '',
+    passwordHash: process.env.DASHBOARD_PASSWORD_HASH || '',
+    // 32+ char passphrase; encrypts Slack tokens at rest. Empty = token-management disabled.
+    masterKey: process.env.DASHBOARD_MASTER_KEY || '',
+    sessionTtlMin: parseInt_(process.env.DASHBOARD_SESSION_TTL_MIN, 120),
+  }),
+
   // Rate limiting
   rateLimit: Object.freeze({
     windowMs: parseInt_(process.env.RATE_LIMIT_WINDOW_MS, 60000),
