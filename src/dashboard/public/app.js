@@ -154,63 +154,77 @@ function renderMain() {
 }
 
 // ---- Overview ----
+// Each panel is fetched independently (?part=) so the fast ones (mentions) render
+// immediately instead of everything waiting on the slowest aggregation.
+const OVERVIEW_PANELS = [
+  ['mentions', 'Recent mentions', mentionItem],
+  ['mentionThreads', 'Mention threads', threadItem],
+  ['threadsImIn', "Threads I'm in", threadItem],
+  ['myThreads', 'Threads I started', threadItem],
+];
+
 async function viewOverview(root) {
   if (STATE.status && STATE.status.firstRun) {
     clear(root);
     root.appendChild(el('div', { class: 'notice warn', text: 'Slack is not connected yet. Go to “Slack Setup” to paste your tokens.' }));
     return;
   }
-  try {
-    const d = await api('/api/summary?count=12');
-    clear(root);
-    root.appendChild(el('div', { class: 'grid cols-2' }, [
-      mentionCard('Recent mentions', d.mentions),
-      threadCard('Mention threads', d.mentionThreads),
-      threadCard("Threads I'm in", d.threadsImIn),
-      threadCard('Threads I started', d.myThreads),
-    ]));
-  } catch (err) {
-    clear(root);
-    root.appendChild(el('div', { class: 'notice err', text: err.message }));
+  clear(root);
+  const grid = el('div', { class: 'grid cols-2' });
+  const cards = {};
+  for (const [key, title] of OVERVIEW_PANELS) {
+    const body = el('div', {}, [el('div', { class: 'spinner', text: 'Loading…' })]);
+    const count = el('span', { class: 'count', text: '' });
+    grid.appendChild(el('div', { class: 'card' }, [el('h2', {}, [title, count]), body]));
+    cards[key] = { body, count };
+  }
+  root.appendChild(grid);
+
+  for (const [key, , renderItem] of OVERVIEW_PANELS) {
+    api('/api/summary?count=12&part=' + key)
+      .then((d) => {
+        const items = d[key];
+        clear(cards[key].body);
+        if (Array.isArray(items) && items.length) {
+          cards[key].count.textContent = String(items.length);
+          items.forEach((it) => cards[key].body.appendChild(renderItem(it)));
+        } else {
+          cards[key].body.appendChild(el('div', {
+            class: 'empty',
+            text: (items && items.error) ? ('Error: ' + items.error) : 'Nothing here.',
+          }));
+        }
+      })
+      .catch((e) => {
+        clear(cards[key].body);
+        cards[key].body.appendChild(el('div', { class: 'notice err', text: e.message }));
+      });
   }
 }
 
-function cardShell(title, items, renderItem) {
-  const list = Array.isArray(items) ? items : [];
-  return el('div', { class: 'card' }, [
-    el('h2', {}, [title, el('span', { class: 'count', text: String(list.length) })]),
-    list.length
-      ? el('div', {}, list.map(renderItem))
-      : el('div', { class: 'empty', text: (items && items.error) ? ('Error: ' + items.error) : 'Nothing here.' }),
+function mentionItem(m) {
+  const link = safeUrl(m.permalink);
+  return el('div', { class: 'item' }, [
+    el('div', { class: 'meta' }, [
+      el('span', { text: '#' + (m.channel_name || m.channel_id || '?') }),
+      el('span', { text: m.user_name ? '@' + m.user_name : '' }),
+      el('span', { text: timeAgo(m.created_at) }),
+      link ? el('a', { href: link, target: '_blank', rel: 'noopener', text: 'open ↗' }) : null,
+    ]),
+    el('div', { class: 'text', text: m.text || '' }),
   ]);
 }
-function mentionCard(title, items) {
-  return cardShell(title, items, (m) => {
-    const link = safeUrl(m.permalink);
-    return el('div', { class: 'item' }, [
-      el('div', { class: 'meta' }, [
-        el('span', { text: '#' + (m.channel_name || m.channel_id || '?') }),
-        el('span', { text: m.user_name ? '@' + m.user_name : '' }),
-        el('span', { text: timeAgo(m.created_at) }),
-        link ? el('a', { href: link, target: '_blank', rel: 'noopener', text: 'open ↗' }) : null,
-      ]),
-      el('div', { class: 'text', text: m.text || '' }),
-    ]);
-  });
-}
-function threadCard(title, items) {
-  return cardShell(title, items, (t) => {
-    const parent = t.parent_message || {};
-    const stats = t.thread_stats || {};
-    return el('div', { class: 'item' }, [
-      el('div', { class: 'meta' }, [
-        el('span', { text: '#' + (t.channel_name || t.channel_id || '?') }),
-        parent.user_name ? el('span', { text: '@' + parent.user_name }) : null,
-        (stats.reply_count != null) ? el('span', { text: stats.reply_count + ' replies' }) : null,
-      ]),
-      el('div', { class: 'text', text: (parent.text || '').slice(0, 280) }),
-    ]);
-  });
+function threadItem(t) {
+  const parent = t.parent_message || {};
+  const stats = t.thread_stats || {};
+  return el('div', { class: 'item' }, [
+    el('div', { class: 'meta' }, [
+      el('span', { text: '#' + (t.channel_name || t.channel_id || '?') }),
+      parent.user_name ? el('span', { text: '@' + parent.user_name }) : null,
+      (stats.reply_count != null) ? el('span', { text: stats.reply_count + ' replies' }) : null,
+    ]),
+    el('div', { class: 'text', text: (parent.text || '').slice(0, 280) }),
+  ]);
 }
 
 // ---- API Keys ----
@@ -297,25 +311,28 @@ async function viewDm(root) {
       ]),
       el('div', { class: 'card' }, [
         el('h2', {}, ['Allowed users', el('span', { class: 'count', text: String(d.users.length) })]),
-        d.envSeed && d.envSeed.length
-          ? el('p', { class: 'muted', text: 'From .env (read-only): ' + d.envSeed.join(', ') })
-          : null,
-        d.users.length ? el('div', {}, d.users.map((u) => dmRow(u))) : el('div', { class: 'empty', text: 'No users added from the dashboard.' }),
+        el('p', { class: 'muted', text: 'Entries from .env are shown but managed in .env (read-only here). Entries added from the dashboard can be removed.' }),
+        d.users.length ? el('div', {}, d.users.map((u) => dmRow(u))) : el('div', { class: 'empty', text: 'Nobody is allowed for DMs yet.' }),
       ]),
     ]));
   } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }
 }
 function dmRow(u) {
+  const badge = u.source === 'env'
+    ? el('span', { class: 'badge muted', text: '.env' })
+    : el('span', { class: 'badge green', text: 'dashboard' });
   return el('div', { class: 'item row', style: 'justify-content:space-between' }, [
     el('div', {}, [
-      el('strong', { text: u.name || u.entry }),
+      el('strong', { text: u.name || u.entry }), ' ', badge,
       u.userId ? el('span', { class: 'mono muted', text: '  ' + u.userId }) : null,
-      el('div', { class: 'meta' }, [el('span', { text: 'added ' + timeAgo(u.addedAt) })]),
+      el('div', { class: 'meta' }, [el('span', { text: u.addedAt ? 'added ' + timeAgo(u.addedAt) : 'from .env config' })]),
     ]),
-    el('button', {
-      class: 'danger small', text: 'Remove',
-      onclick: async () => { await api('/api/dm-allowlist/' + u.id, { method: 'DELETE' }); viewDm(document.querySelector('.content')); },
-    }),
+    u.removable
+      ? el('button', {
+          class: 'danger small', text: 'Remove',
+          onclick: async () => { await api('/api/dm-allowlist/' + u.id, { method: 'DELETE' }); viewDm(document.querySelector('.content')); },
+        })
+      : el('span', { class: 'muted', text: 'in .env' }),
   ]);
 }
 
@@ -345,12 +362,22 @@ async function viewSetup(root) {
     } catch (err) { msg.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
   };
 
+  const connected = s.slack && s.slack.auth === 'valid';
   root.appendChild(el('div', { class: 'grid' }, [
-    !s.security || !s.security.masterKeySet
-      ? el('div', { class: 'notice warn', text: 'DASHBOARD_MASTER_KEY is not set. Set it in .env and restart before saving tokens — otherwise tokens can only be set via the CLI.' })
+    connected
+      ? el('div', { class: 'notice ok' }, [
+          `Slack is already connected as ${s.slack.currentUser || '?'} @ ${s.slack.team || '?'} `,
+          `(source: ${s.slack.credsSource === 'env' ? '.env file' : 'encrypted store'}). `,
+          'Tokens are never shown for security. You only need this tab to replace them.',
+        ])
+      : el('div', { class: 'notice warn', text: 'Slack is not connected. Paste your tokens below and Save.' }),
+    // Only nag about the master key when it actually matters: you are not connected
+    // yet and would need to store tokens from here. If already connected, stay quiet.
+    (!connected && (!s.security || !s.security.masterKeySet))
+      ? el('div', { class: 'notice warn', text: 'DASHBOARD_MASTER_KEY is not set. Set it in .env and restart before saving tokens from here — otherwise tokens can only be set via .env / the CLI.' })
       : null,
     el('div', { class: 'card' }, [
-      el('h2', { text: 'Connect Slack' }),
+      el('h2', { text: connected ? 'Replace Slack credentials' : 'Connect Slack' }),
       el('p', { class: 'muted' }, [
         'Get these from DevTools on ', el('span', { class: 'mono', text: 'app.slack.com' }),
         '. Cookie ', el('span', { class: 'mono', text: 'd' }), ' (xoxd-) under Application ▸ Cookies; token via console: ',

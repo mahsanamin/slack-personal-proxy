@@ -188,11 +188,31 @@ async function resolveDmTarget(services, entry) {
   return { entry: trimmed, userId: found.id, name: found.name };
 }
 
-function listDmUsers(req, res) {
-  res.json(formatSuccessResponse({
-    users: configStore.listDmUsers(),
-    envSeed: (config.whitelist && config.whitelist.dmUsers) || [],
-  }));
+async function listDmUsers(req, res, next) {
+  try {
+    const wl = req.services.whitelistService;
+    const envEntries = (config.whitelist && config.whitelist.dmUsers) || [];
+
+    // Resolve the .env seed entries (user IDs, usernames, or D-channel IDs) to names
+    // so they show as proper people, not raw IDs. These are read-only from the UI
+    // (they live in .env), so they carry removable:false.
+    const envUsers = [];
+    for (const entry of envEntries) {
+      let userId = null;
+      try {
+        if (/^D[A-Z0-9]+$/.test(entry)) userId = await wl.resolveUserIdFromDmChannel(entry);
+        else userId = wl.resolveUserId(entry);
+      } catch { /* leave unresolved */ }
+      const name = (userId && wl.userIdToName && wl.userIdToName.get(userId)) || null;
+      envUsers.push({ source: 'env', entry, userId, name: name || entry, removable: false });
+    }
+
+    const storeUsers = configStore.listDmUsers().map((u) => ({ source: 'dashboard', removable: true, ...u }));
+
+    res.json(formatSuccessResponse({ users: [...envUsers, ...storeUsers] }));
+  } catch (err) {
+    next(err);
+  }
 }
 
 async function addDmUser(req, res, next) {
@@ -225,20 +245,24 @@ async function summary(req, res, next) {
     const { mentionService, activityService } = req.services;
     const count = Math.min(parseInt(req.query.count, 10) || 15, 50);
 
-    const settle = (p) => p.then((v) => ({ ok: true, v })).catch((e) => ({ ok: false, e: e.message }));
-    const [mentions, mentionThreads, threadsImIn, myThreads] = await Promise.all([
-      settle(mentionService.getAllMentions(count, false)),
-      settle(mentionService.getMentionThreads(count)),
-      settle(activityService.getThreadsImIn(count)),
-      settle(activityService.getMyThreads(count, false)),
-    ]);
+    // Each panel is a separate slow Slack aggregation. Support ?part=<key> so the
+    // dashboard can fetch and render them one at a time (fast panels show first)
+    // instead of blocking on the slowest. With no part, return all (backward compat).
+    const parts = {
+      mentions: async () => (await mentionService.getAllMentions(count, false)).mentions.map(compactMention),
+      mentionThreads: async () => (await mentionService.getMentionThreads(count)).threads.map(compactThread),
+      threadsImIn: async () => (await activityService.getThreadsImIn(count)).threads.map(compactThread),
+      myThreads: async () => (await activityService.getMyThreads(count, false)).threads.map(compactThread),
+    };
 
-    res.json(formatSuccessResponse({
-      mentions: mentions.ok ? mentions.v.mentions.map(compactMention) : { error: mentions.e },
-      mentionThreads: mentionThreads.ok ? mentionThreads.v.threads.map(compactThread) : { error: mentionThreads.e },
-      threadsImIn: threadsImIn.ok ? threadsImIn.v.threads.map(compactThread) : { error: threadsImIn.e },
-      myThreads: myThreads.ok ? myThreads.v.threads.map(compactThread) : { error: myThreads.e },
+    const requested = req.query.part && parts[req.query.part] ? [req.query.part] : Object.keys(parts);
+    const out = {};
+    await Promise.all(requested.map(async (key) => {
+      try { out[key] = await parts[key](); }
+      catch (e) { out[key] = { error: e.message }; }
     }));
+
+    res.json(formatSuccessResponse(out));
   } catch (err) {
     next(err);
   }

@@ -123,6 +123,19 @@ describe('Dashboard API', () => {
       expect(del.status).toBe(200);
     });
 
+    test('summary returns all panels, or just one with ?part=', async () => {
+      const all = await agent.get('/dashboard/api/summary');
+      expect(all.status).toBe(200);
+      expect(Object.keys(all.body.data).sort()).toEqual(
+        ['mentionThreads', 'mentions', 'myThreads', 'threadsImIn'].sort()
+      );
+
+      const one = await agent.get('/dashboard/api/summary?part=mentions');
+      expect(one.status).toBe(200);
+      expect(Object.keys(one.body.data)).toEqual(['mentions']);
+      expect(Array.isArray(one.body.data.mentions)).toBe(true);
+    });
+
     test('logout clears the session', async () => {
       await agent.post('/dashboard/logout');
       const res = await agent.get('/dashboard/api/status');
