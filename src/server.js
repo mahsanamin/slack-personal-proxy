@@ -39,10 +39,15 @@ const app = express();
 app.use(ipWhitelist);
 
 // Security & parsing
+// Over plain HTTP, drop CSP's upgrade-insecure-requests and HSTS: otherwise the
+// browser force-upgrades same-origin assets/API calls to https (which the server
+// does not serve), and the dashboard hangs on "Loading…". Only meaningful over HTTPS.
+const httpsOn = config.enableHttps;
 // Helmet with relaxed CSP for Swagger UI (needs inline scripts/styles)
 app.use((req, res, next) => {
   if (req.path.startsWith('/docs')) {
     return helmet({
+      strictTransportSecurity: httpsOn,
       contentSecurityPolicy: {
         useDefaults: false,
         directives: {
@@ -55,7 +60,16 @@ app.use((req, res, next) => {
       },
     })(req, res, next);
   }
-  return helmet()(req, res, next);
+  return helmet({
+    strictTransportSecurity: httpsOn,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        // null removes the directive; keep it only when serving HTTPS.
+        upgradeInsecureRequests: httpsOn ? [] : null,
+      },
+    },
+  })(req, res, next);
 });
 app.use(cors());
 app.use(express.json());
