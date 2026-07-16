@@ -54,9 +54,17 @@ describe('secureCrypto', () => {
   describe('password hashing (scrypt)', () => {
     test('verifies the correct password and rejects wrong ones', () => {
       const h = hashPassword('correct horse battery');
-      expect(h.startsWith('scrypt$')).toBe(true);
+      expect(h.startsWith('scrypt:')).toBe(true);
+      expect(h).not.toContain('$'); // must be safe to store in .env
       expect(verifyPassword('correct horse battery', h)).toBe(true);
       expect(verifyPassword('wrong', h)).toBe(false);
+    });
+
+    test('still verifies a legacy $-separated hash', () => {
+      // Format produced before the ':' switch: scrypt$salt$hash
+      const legacy = hashPassword('legacy-pass').replace(/:/g, '$');
+      expect(verifyPassword('legacy-pass', legacy)).toBe(true);
+      expect(verifyPassword('nope', legacy)).toBe(false);
     });
 
     test('rejects malformed stored hashes without throwing', () => {

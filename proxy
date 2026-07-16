@@ -18,14 +18,33 @@ COMPOSE_FILE="docker-compose.yml"
 SERVICE_NAME="slack-personal-proxy"
 NODE_IMAGE="node:20-alpine"
 
-# Load .env for health check config
+# Load .env for health-check config. Parse it LITERALLY (do not `source` it): values
+# can contain '$', backticks, quotes (e.g. a password hash or passphrase), which shell
+# sourcing would expand or execute and break under `set -u`.
 load_env() {
   if [ ! -f .env ]; then
     echo "ERROR: .env file not found. Copy .env.example and configure it:"
     echo "  cp .env.example .env"
     exit 1
   fi
-  source .env
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Skip blanks and comments
+    [ -z "$line" ] && continue
+    case "$line" in \#*) continue ;; esac
+    # Split on the first '='
+    key="${line%%=*}"
+    val="${line#*=}"
+    # Trim surrounding whitespace on the key; only accept valid identifiers
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    case "$key" in
+      [A-Za-z_]*)
+        [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        export "$key=$val"
+        ;;
+    esac
+  done < .env
 }
 
 # The host to reach the published port on. When BIND_ADDRESS is a specific IP
