@@ -65,16 +65,17 @@ function bootstrap(req, res) {
 async function status(req, res, next) {
   try {
     const { slackClient } = req.services;
+    // Identity comes from what the client resolved at startup — always present and
+    // free (no network call, so it can't be starved by the throttled summary calls).
+    const currentUser = slackClient.currentUserName || null;
+    const team = slackClient.teamName || null;
+    // A light live check only decides the auth badge; identity above is authoritative.
     let slackAuth = 'unknown';
-    let team = null;
-    let currentUser = null;
     try {
-      const t = await slackClient.authTest();
+      await slackClient.authTest();
       slackAuth = 'valid';
-      team = t.team;
-      currentUser = t.user;
     } catch {
-      slackAuth = 'error';
+      slackAuth = currentUser ? 'stale' : 'error';
     }
 
     const usingStoredCreds = configStore.hasStoredSlackCreds();
@@ -251,37 +252,62 @@ function removeDmUser(req, res) {
 }
 
 // --- Aggregated read view ---
+//
+// Stale-while-revalidate caching. The four panels are slow Slack aggregations that
+// all share one throttled queue, so the first load is unavoidably bounded by Slack.
+// After that:
+//   - a cached panel is returned INSTANTLY,
+//   - if it is older than the soft window, a background refresh updates the cache so
+//     the next view is current (this is how a thread that gained replies shows up),
+//   - entries live in the cache for the hard window, then a cold recompute happens.
+// ?fresh=1 forces a blocking recompute (the Refresh button).
 
-const SUMMARY_TTL = 60; // seconds — repeat Overview loads within this window are instant
+const SUMMARY_HARD_TTL = 600;   // seconds the cache entry lives in node-cache
+const SUMMARY_SOFT_MS = 30000;  // ms after which a served-cached entry is refreshed in the background
+const summaryRefreshing = new Set();
+
+function summaryComputers(services, count) {
+  const { mentionService, activityService } = services;
+  return {
+    mentions: async () => (await mentionService.getAllMentions(count, false)).mentions.map(compactMention),
+    mentionThreads: async () => (await mentionService.getMentionThreads(count)).threads.map(compactThread),
+    threadsImIn: async () => (await activityService.getThreadsImIn(count)).threads.map(compactThread),
+    myThreads: async () => (await activityService.getMyThreads(count, false)).threads.map(compactThread),
+  };
+}
 
 async function summary(req, res, next) {
   try {
-    const { mentionService, activityService, cacheService } = req.services;
+    const { cacheService } = req.services;
     const count = Math.min(parseInt(req.query.count, 10) || 15, 50);
     const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
+    const computers = summaryComputers(req.services, count);
 
-    // Each panel is a separate slow Slack aggregation. Support ?part=<key> so the
-    // dashboard can fetch and render them one at a time (fast panels show first)
-    // instead of blocking on the slowest. With no part, return all (backward compat).
-    const parts = {
-      mentions: async () => (await mentionService.getAllMentions(count, false)).mentions.map(compactMention),
-      mentionThreads: async () => (await mentionService.getMentionThreads(count)).threads.map(compactThread),
-      threadsImIn: async () => (await activityService.getThreadsImIn(count)).threads.map(compactThread),
-      myThreads: async () => (await activityService.getMyThreads(count, false)).threads.map(compactThread),
-    };
-
-    const requested = req.query.part && parts[req.query.part] ? [req.query.part] : Object.keys(parts);
+    const requested = req.query.part && computers[req.query.part] ? [req.query.part] : Object.keys(computers);
     const out = {};
+
     await Promise.all(requested.map(async (key) => {
       const cacheKey = `dash:summary:${key}:${count}`;
-      if (!fresh && cacheService) {
-        const cached = cacheService.get(cacheKey);
-        if (cached !== undefined && cached !== null) { out[key] = cached; return; }
+      const entry = (!fresh && cacheService) ? cacheService.get(cacheKey) : undefined;
+
+      if (entry && entry.data !== undefined) {
+        out[key] = entry.data;
+        // Refresh in the background if the cache has gone soft-stale.
+        if (Date.now() - entry.at > SUMMARY_SOFT_MS && !summaryRefreshing.has(cacheKey)) {
+          summaryRefreshing.add(cacheKey);
+          computers[key]()
+            .then((d) => cacheService.set(cacheKey, { data: d, at: Date.now() }, SUMMARY_HARD_TTL))
+            .catch(() => {})
+            .finally(() => summaryRefreshing.delete(cacheKey));
+        }
+        return;
       }
+
+      // Cold (or forced fresh): compute now and cache.
       try {
-        const data = await parts[key]();
+        const data = await computers[key]();
         out[key] = data;
-        if (cacheService) cacheService.set(cacheKey, data, SUMMARY_TTL);
+        if (cacheService) cacheService.set(cacheKey, { data, at: Date.now() }, SUMMARY_HARD_TTL);
       } catch (e) {
         out[key] = { error: e.message };
       }

@@ -240,39 +240,69 @@ function threadItem(t) {
 
 // ---- API Keys ----
 async function viewKeys(root) {
-  try {
-    const d = await api('/api/keys');
-    clear(root);
-    const created = el('div');
-    const label = el('input', { type: 'text', id: 'kl', placeholder: 'e.g. my-laptop, cron-job' });
-    const create = async () => {
-      try {
-        const r = await api('/api/keys', { method: 'POST', body: JSON.stringify({ label: label.value || 'unnamed' }) });
-        clear(created);
-        created.appendChild(el('div', { class: 'notice ok' }, [
-          el('div', { text: r.warning }),
-          el('div', { class: 'keybox mono', text: r.key }),
-        ]));
-        label.value = '';
-        viewKeys(root === document ? root : document.querySelector('.content'));
-      } catch (err) { created.appendChild(el('div', { class: 'notice err', text: err.message })); }
-    };
-    root.appendChild(el('div', { class: 'grid' }, [
-      el('div', { class: 'card' }, [
-        el('h2', { text: 'Create API key' }),
-        el('p', { class: 'muted', text: 'Keys are shown once, then stored only as a hash. Use them in the X-API-Key header.' }),
-        created,
-        el('label', { text: 'Label' }), label,
-        el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
-      ]),
-      el('div', { class: 'card' }, [
-        el('h2', {}, ['Existing keys', el('span', { class: 'count', text: String(d.keys.length) })]),
-        d.keys.length ? el('div', {}, d.keys.map((k) => keyRow(k, root))) : el('div', { class: 'empty', text: 'No keys yet.' }),
-      ]),
-    ]));
-  } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }
+  clear(root);
+  const created = el('div');          // holds the freshly created key; persists until you dismiss it
+  const listBody = el('div');         // only this refreshes after create/revoke
+  const label = el('input', { type: 'text', id: 'kl', placeholder: 'e.g. my-laptop, cron-job' });
+  const listCount = el('span', { class: 'count', text: '' });
+
+  async function refreshList() {
+    try {
+      const d = await api('/api/keys');
+      listCount.textContent = String(d.keys.length);
+      clear(listBody);
+      if (d.keys.length) d.keys.forEach((k) => listBody.appendChild(keyRow(k, refreshList)));
+      else listBody.appendChild(el('div', { class: 'empty', text: 'No keys yet.' }));
+    } catch (err) { clear(listBody); listBody.appendChild(el('div', { class: 'notice err', text: err.message })); }
+  }
+
+  const create = async () => {
+    try {
+      const r = await api('/api/keys', { method: 'POST', body: JSON.stringify({ label: label.value || 'unnamed' }) });
+      showCreatedKey(created, r.key);   // stays on screen with Copy; NOT wiped by a re-render
+      label.value = '';
+      refreshList();                    // update the list only, leaving the key visible
+    } catch (err) { clear(created); created.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
+  };
+
+  root.appendChild(el('div', { class: 'grid' }, [
+    el('div', { class: 'card' }, [
+      el('h2', { text: 'Create API key' }),
+      el('p', { class: 'muted', text: 'Keys are shown once, then stored only as a hash. Use them in the X-API-Key header.' }),
+      created,
+      el('label', { text: 'Label' }), label,
+      el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
+    ]),
+    el('div', { class: 'card' }, [
+      el('h2', {}, ['Existing keys', listCount]),
+      listBody,
+    ]),
+  ]));
+  refreshList();
 }
-function keyRow(k, root) {
+
+// Show a just-created key with a selectable field + Copy button, so it can be copied
+// before it is gone (it is never retrievable again). Stays until manually dismissed.
+function showCreatedKey(container, key) {
+  clear(container);
+  const field = el('input', { type: 'text', class: 'mono', style: 'flex:1', value: key, readonly: 'readonly', onclick: (e) => e.target.select() });
+  const copyBtn = el('button', {
+    class: 'small', text: 'Copy',
+    onclick: async () => {
+      let ok = false;
+      try { if (navigator.clipboard) { await navigator.clipboard.writeText(key); ok = true; } } catch { /* fall through */ }
+      if (!ok) { field.focus(); field.select(); try { ok = document.execCommand('copy'); } catch { ok = false; } }
+      copyBtn.textContent = ok ? 'Copied ✓' : 'Select + ⌘/Ctrl-C';
+      setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2500);
+    },
+  });
+  container.appendChild(el('div', { class: 'notice ok' }, [
+    el('div', { text: 'Copy this key now — it is shown only once and cannot be retrieved again.' }),
+    el('div', { class: 'row', style: 'gap:8px;margin-top:8px' }, [field, copyBtn]),
+    el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Dismiss', onclick: () => clear(container) })]),
+  ]));
+}
+function keyRow(k, refreshList) {
   const revoked = !!k.revokedAt;
   return el('div', { class: 'item' }, [
     el('div', { class: 'row', style: 'justify-content:space-between' }, [
@@ -290,7 +320,7 @@ function keyRow(k, root) {
             onclick: async () => {
               if (!confirm('Revoke key "' + k.label + '"? Clients using it stop working immediately.')) return;
               await api('/api/keys/' + k.id, { method: 'DELETE' });
-              viewKeys(document.querySelector('.content'));
+              refreshList();
             },
           }),
     ]),
