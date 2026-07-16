@@ -186,10 +186,26 @@ CONF
   fi
 }
 
+# Ensure ./data exists and the container (run as the host user) can write to it.
+ensure_data_dir() {
+  mkdir -p data
+  # If an earlier run left root/1001-owned files here, the host user can't write them.
+  # Detect by trying to create a temp file, and reclaim ownership if that fails.
+  if touch data/.wtest 2>/dev/null; then
+    rm -f data/.wtest
+  else
+    echo "Reclaiming data/ ownership for the container..."
+    sudo chown -R "$(id -u):$(id -g)" data || true
+  fi
+}
+
 cmd_start() {
   validate_env
   ensure_certs
-  echo "Building and starting..."
+  ensure_data_dir
+  # Run the container as the host user so the bind-mounted ./data is writable.
+  export PUID="$(id -u)" PGID="$(id -g)"
+  echo "Building and starting (as ${PUID}:${PGID})..."
   docker compose -f "$COMPOSE_FILE" up -d --build
   wait_healthy
   show_status

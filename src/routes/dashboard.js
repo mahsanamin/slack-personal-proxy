@@ -7,7 +7,11 @@ const router = express.Router();
 const PUBLIC_DIR = path.join(__dirname, '..', 'dashboard', 'public');
 
 // Static SPA shell (HTML/JS/CSS only, no secrets). Still gated by the global ipWhitelist.
-router.use('/', express.static(PUBLIC_DIR));
+// no-cache => the browser revalidates each load, so an updated app.js/styles.css is
+// picked up immediately after a deploy instead of being served stale from cache.
+router.use('/', express.static(PUBLIC_DIR, {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 // Public: auth + a tiny bootstrap probe so the SPA knows whether login is configured.
 router.post('/login', c.login);

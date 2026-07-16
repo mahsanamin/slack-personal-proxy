@@ -151,17 +151,29 @@ function listKeys(req, res) {
   res.json(formatSuccessResponse({ keys: configStore.listKeys() }));
 }
 
+const STORE_WRITE_FAILED = { code: 'STORE_WRITE_FAILED', status: 500, message: 'Could not save to the data directory. The ./data volume is likely not writable by the container.' };
+
 function createKey(req, res) {
   const label = (req.body && req.body.label) || 'unnamed';
-  const { key, meta } = configStore.createKey(label);
-  // The secret is returned exactly once and never stored in plaintext.
-  res.json(formatSuccessResponse({ key, meta, warning: 'Copy this key now — it will never be shown again.' }));
+  try {
+    const { key, meta } = configStore.createKey(label);
+    // The secret is returned exactly once and never stored in plaintext.
+    res.json(formatSuccessResponse({ key, meta, warning: 'Copy this key now — it will never be shown again.' }));
+  } catch (err) {
+    logger.error(`createKey failed: ${err.message}`);
+    res.status(STORE_WRITE_FAILED.status).json(formatErrorResponse(STORE_WRITE_FAILED, { reason: err.message }));
+  }
 }
 
 function revokeKey(req, res) {
-  const ok = configStore.revokeKey(req.params.id);
-  if (!ok) return res.status(ERR.NOT_FOUND.status).json(formatErrorResponse(ERR.NOT_FOUND));
-  res.json(formatSuccessResponse({ revoked: true }));
+  try {
+    const ok = configStore.revokeKey(req.params.id);
+    if (!ok) return res.status(ERR.NOT_FOUND.status).json(formatErrorResponse(ERR.NOT_FOUND));
+    res.json(formatSuccessResponse({ revoked: true }));
+  } catch (err) {
+    logger.error(`revokeKey failed: ${err.message}`);
+    res.status(STORE_WRITE_FAILED.status).json(formatErrorResponse(STORE_WRITE_FAILED, { reason: err.message }));
+  }
 }
 
 // --- DM allowlist ---
