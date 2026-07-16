@@ -84,7 +84,14 @@ async function status(req, res, next) {
 
     res.json(formatSuccessResponse({
       firstRun: slackAuth !== 'valid' && !usingStoredCreds && !config.slack.token && !config.slack.botToken,
-      slack: { auth: slackAuth, team, currentUser, credsSource: usingStoredCreds ? 'encrypted-store' : 'env' },
+      slack: {
+        auth: slackAuth,
+        team,
+        currentUser,
+        realName: slackClient.currentUserRealName || null,
+        avatar: slackClient.currentUserAvatar || null,
+        credsSource: usingStoredCreds ? 'encrypted-store' : 'env',
+      },
       security: {
         bindAddress,
         exposedOnNetwork,

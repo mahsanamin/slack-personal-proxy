@@ -67,6 +67,8 @@ app.use((req, res, next) => {
       directives: {
         // null removes the directive; keep it only when serving HTTPS.
         upgradeInsecureRequests: httpsOn ? [] : null,
+        // Allow the connected user's Slack avatar in the dashboard header.
+        imgSrc: ["'self'", 'data:', 'https://*.slack-edge.com', 'https://secure.gravatar.com', 'https://*.gravatar.com'],
       },
     },
   })(req, res, next);

@@ -77,6 +77,19 @@ class SlackClient {
     this.teamId = authTest.team_id;
     this.teamName = authTest.team;
 
+    // Resolve the connected user's display name + avatar for the dashboard header.
+    // Non-fatal: a failure here must not stop the server from starting.
+    this.currentUserRealName = null;
+    this.currentUserAvatar = null;
+    try {
+      const info = await this.client.users.info({ user: this.currentUserId });
+      const p = info.user?.profile || {};
+      this.currentUserRealName = p.display_name || p.real_name || info.user?.real_name || null;
+      this.currentUserAvatar = p.image_72 || p.image_48 || p.image_192 || null;
+    } catch (err) {
+      logger.warn(`Could not resolve own profile for header: ${err.message}`);
+    }
+
     logger.info(`Authenticated as ${this.currentUserName} (${this.currentUserId}) via ${this.authMethod}`);
     logger.info(`Connected to workspace: ${this.teamName} (${this.teamId})`);
   }

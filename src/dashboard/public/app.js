@@ -127,18 +127,29 @@ function renderMain() {
   clear(app());
   const s = STATE.status || {};
   const healthy = s.slack && s.slack.auth === 'valid';
-  const who = s.slack && s.slack.currentUser
-    ? `${s.slack.currentUser}${s.slack.team ? ' · ' + s.slack.team : ''}`
-    : (s.slack && s.slack.team ? s.slack.team : '');
+  const slack = (s && s.slack) || {};
+  const displayName = slack.realName || slack.currentUser || null;
   const swaggerOn = s.security && s.security.swaggerEnabled;
+
+  // Connected user, shown next to Log out: avatar + name + team.
+  const userChip = displayName
+    ? el('div', { class: 'userchip' }, [
+        slack.avatar ? el('img', { class: 'avatar', src: slack.avatar, alt: '', width: '26', height: '26' }) : null,
+        el('div', { class: 'userchip-text' }, [
+          el('div', { class: 'uc-name', text: displayName }),
+          slack.team ? el('div', { class: 'uc-team', text: slack.team }) : null,
+        ]),
+      ])
+    : null;
+
   const topbar = el('div', { class: 'topbar' }, [
     el('div', { class: 'brand' }, [
-      el('span', { class: 'dot' + (healthy ? '' : ' bad') }),
+      el('span', { class: 'dot' + (healthy ? '' : ' bad'), title: 'Slack auth: ' + (slack.auth || 'unknown') }),
       el('span', { text: '🛰️ Slack Proxy Dashboard' }),
-      who ? el('span', { class: 'muted', text: '· ' + who }) : null,
     ]),
-    el('div', { class: 'row' }, [
+    el('div', { class: 'row', style: 'gap:14px;align-items:center' }, [
       swaggerOn ? el('a', { class: 'muted', href: '/docs', target: '_blank', rel: 'noopener', text: 'API Docs ↗' }) : null,
+      userChip,
       el('button', {
         class: 'secondary small', text: 'Log out',
         onclick: async () => { await api('/logout', { method: 'POST' }).catch(() => {}); renderLogin(); },
