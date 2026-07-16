@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Resolve this script's own directory (following symlinks) so it works when called
+# from anywhere, including via a global `slack-proxy` symlink. All docker compose and
+# file paths are relative to the repo, so cd there first.
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+cd "$SCRIPT_DIR"
+
+CMD_NAME="$(basename "$0")"
 COMPOSE_FILE="docker-compose.yml"
 SERVICE_NAME="slack-personal-proxy"
+NODE_IMAGE="node:20-alpine"
 
 # Load .env for health check config
 load_env() {
@@ -60,7 +74,7 @@ wait_healthy() {
     sleep 1
   done
   echo "WARNING: Health check did not pass within 30 seconds."
-  echo "Check logs: ./proxy logs"
+  echo "Check logs: ${CMD_NAME} logs"
   return 1
 }
 
@@ -76,8 +90,11 @@ show_status() {
   echo ""
   docker compose -f "$COMPOSE_FILE" ps
   echo ""
-  echo "Service: ${scheme}://localhost:${port}"
-  echo "Health:  curl ${opts} ${scheme}://localhost:${port}/health"
+  echo "Service:   ${scheme}://localhost:${port}"
+  echo "Health:    curl ${opts} ${scheme}://localhost:${port}/health"
+  if [ "${ENABLE_DASHBOARD:-true}" != "false" ]; then
+    echo "Dashboard: ${scheme}://localhost:${port}/dashboard"
+  fi
 }
 
 ensure_certs() {
@@ -154,6 +171,12 @@ cmd_restart() {
   cmd_start
 }
 
+cmd_update() {
+  echo "Pulling latest code..."
+  git pull --ff-only
+  cmd_restart
+}
+
 cmd_logs() {
   docker compose -f "$COMPOSE_FILE" logs -f "$@"
 }
@@ -174,23 +197,64 @@ cmd_status() {
   fi
 }
 
+# Generate a dashboard password hash INSIDE Docker (no host Node needed).
+# Bind-mounts the repo into the node image and runs the existing hasher script.
+cmd_hash_password() {
+  local pw="${1:-}"
+  echo "Generating dashboard password hash (via Docker)..."
+  if [ -n "$pw" ]; then
+    docker run --rm -v "$SCRIPT_DIR":/app -w /app "$NODE_IMAGE" \
+      node scripts/set-dashboard-password.js "$pw"
+  elif [ -t 0 ]; then
+    docker run --rm -it -v "$SCRIPT_DIR":/app -w /app "$NODE_IMAGE" \
+      node scripts/set-dashboard-password.js
+  else
+    echo "No password given and no interactive terminal."
+    echo "Run: ${CMD_NAME} hash-password 'your-password'"
+    exit 1
+  fi
+  echo ""
+  echo "Paste the DASHBOARD_PASSWORD_HASH line above into your .env, then: ${CMD_NAME} restart"
+}
+
+# Install this script as a global `slack-proxy` command (symlink on PATH).
+cmd_install() {
+  local target="${1:-/usr/local/bin/slack-proxy}"
+  local src="$SCRIPT_DIR/proxy"
+  echo "Linking ${target} -> ${src}"
+  if ln -sf "$src" "$target" 2>/dev/null; then
+    :
+  else
+    echo "Elevated permissions needed for ${target}; using sudo..."
+    sudo ln -sf "$src" "$target"
+  fi
+  echo "Installed. From now on, from any directory:"
+  echo "  slack-proxy start | stop | restart | update | status | logs | hash-password"
+}
+
 cmd_help() {
-  echo "Usage: ./proxy <command>"
+  echo "Usage: ${CMD_NAME} <command>"
   echo ""
   echo "Commands:"
-  echo "  start     Build, start, and wait for healthy"
-  echo "  stop      Stop and remove container"
-  echo "  restart   Stop then start"
-  echo "  logs      Tail container logs (Ctrl-C to exit)"
-  echo "  status    Check if service is running"
-  echo "  help      Show this help"
+  echo "  start           Build, start, and wait for healthy"
+  echo "  stop            Stop and remove container"
+  echo "  restart         Stop then start (rebuilds the image)"
+  echo "  update          git pull, then rebuild and restart"
+  echo "  logs            Tail container logs (Ctrl-C to exit)"
+  echo "  status          Check if service is running"
+  echo "  hash-password   Generate a dashboard password hash (runs in Docker)"
+  echo "  install [path]  Install as global 'slack-proxy' (default /usr/local/bin)"
+  echo "  help            Show this help"
 }
 
 case "${1:-help}" in
-  start)   cmd_start ;;
-  stop)    cmd_stop ;;
-  restart) cmd_restart ;;
-  logs)    shift; cmd_logs "$@" ;;
-  status)  cmd_status ;;
-  help|*)  cmd_help ;;
+  start)          cmd_start ;;
+  stop)           cmd_stop ;;
+  restart)        cmd_restart ;;
+  update)         cmd_update ;;
+  logs)           shift; cmd_logs "$@" ;;
+  status)         cmd_status ;;
+  hash-password)  shift || true; cmd_hash_password "${1:-}" ;;
+  install)        shift || true; cmd_install "${1:-}" ;;
+  help|*)         cmd_help ;;
 esac

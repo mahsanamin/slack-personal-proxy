@@ -97,19 +97,28 @@ A password-protected web console at **`/dashboard`** to run the proxy without ed
 manage the DM allowlist (add more people, applied live), set up Slack tokens securely, and
 check your network-exposure/security status at a glance.
 
-```bash
-# 1. Create the login (writes a scrypt hash to paste into .env)
-npm run set-dashboard-password
+Everything runs through Docker via the `./proxy` script (no host Node needed). Install it
+once as a global command, then use it from anywhere:
 
-# 2. In .env
+```bash
+# 0. (optional, once) install the global command
+./proxy install                 # then use `slack-proxy ...` from any directory
+
+# 1. Create the login hash (runs inside Docker, prints a line for .env)
+slack-proxy hash-password 'your-password'
+
+# 2. Add to .env
 ENABLE_DASHBOARD=true
 DASHBOARD_USER=you
-DASHBOARD_PASSWORD_HASH=scrypt$...        # from step 1
-DASHBOARD_MASTER_KEY=<32+ char passphrase># encrypts Slack tokens at rest
+DASHBOARD_PASSWORD_HASH=scrypt$...         # from step 1
+DASHBOARD_MASTER_KEY=<32+ char passphrase> # encrypts Slack tokens at rest
 
-# 3. Open it (localhost by default; still behind the IP allowlist)
+# 3. Rebuild + restart, then open it (localhost by default; behind the IP allowlist)
+slack-proxy restart
 open http://localhost:8282/dashboard
 ```
+
+To pull a new version and restart in one step: `slack-proxy update`.
 
 Notes:
 - **Login is a session cookie**, separate from the `X-API-Key` used by programmatic clients.
