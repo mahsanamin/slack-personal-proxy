@@ -127,16 +127,23 @@ function renderMain() {
   clear(app());
   const s = STATE.status || {};
   const healthy = s.slack && s.slack.auth === 'valid';
+  const who = s.slack && s.slack.currentUser
+    ? `${s.slack.currentUser}${s.slack.team ? ' · ' + s.slack.team : ''}`
+    : (s.slack && s.slack.team ? s.slack.team : '');
+  const swaggerOn = s.security && s.security.swaggerEnabled;
   const topbar = el('div', { class: 'topbar' }, [
     el('div', { class: 'brand' }, [
       el('span', { class: 'dot' + (healthy ? '' : ' bad') }),
       el('span', { text: '🛰️ Slack Proxy Dashboard' }),
-      s.slack && s.slack.team ? el('span', { class: 'muted', text: '· ' + s.slack.team }) : null,
+      who ? el('span', { class: 'muted', text: '· ' + who }) : null,
     ]),
-    el('button', {
-      class: 'secondary small', text: 'Log out',
-      onclick: async () => { await api('/logout', { method: 'POST' }).catch(() => {}); renderLogin(); },
-    }),
+    el('div', { class: 'row' }, [
+      swaggerOn ? el('a', { class: 'muted', href: '/docs', target: '_blank', rel: 'noopener', text: 'API Docs ↗' }) : null,
+      el('button', {
+        class: 'secondary small', text: 'Log out',
+        onclick: async () => { await api('/logout', { method: 'POST' }).catch(() => {}); renderLogin(); },
+      }),
+    ]),
   ]);
   const tabs = el('div', { class: 'tabs' }, TABS.map(([id, label]) =>
     el('button', {
@@ -163,13 +170,17 @@ const OVERVIEW_PANELS = [
   ['myThreads', 'Threads I started', threadItem],
 ];
 
-async function viewOverview(root) {
+async function viewOverview(root, fresh) {
   if (STATE.status && STATE.status.firstRun) {
     clear(root);
     root.appendChild(el('div', { class: 'notice warn', text: 'Slack is not connected yet. Go to “Slack Setup” to paste your tokens.' }));
     return;
   }
   clear(root);
+  root.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;margin-bottom:12px' }, [
+    el('span', { class: 'muted', text: fresh ? 'Refreshing…' : 'Cached up to 60s. Use Refresh for the latest.' }),
+    el('button', { class: 'secondary small', text: 'Refresh', onclick: () => viewOverview(document.querySelector('.content'), true) }),
+  ]));
   const grid = el('div', { class: 'grid cols-2' });
   const cards = {};
   for (const [key, title] of OVERVIEW_PANELS) {
@@ -181,7 +192,7 @@ async function viewOverview(root) {
   root.appendChild(grid);
 
   for (const [key, , renderItem] of OVERVIEW_PANELS) {
-    api('/api/summary?count=12&part=' + key)
+    api('/api/summary?count=8&part=' + key + (fresh ? '&fresh=1' : ''))
       .then((d) => {
         const items = d[key];
         clear(cards[key].body);

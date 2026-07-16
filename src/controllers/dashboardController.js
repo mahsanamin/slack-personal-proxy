@@ -240,10 +240,13 @@ function removeDmUser(req, res) {
 
 // --- Aggregated read view ---
 
+const SUMMARY_TTL = 60; // seconds — repeat Overview loads within this window are instant
+
 async function summary(req, res, next) {
   try {
-    const { mentionService, activityService } = req.services;
+    const { mentionService, activityService, cacheService } = req.services;
     const count = Math.min(parseInt(req.query.count, 10) || 15, 50);
+    const fresh = req.query.fresh === '1' || req.query.fresh === 'true';
 
     // Each panel is a separate slow Slack aggregation. Support ?part=<key> so the
     // dashboard can fetch and render them one at a time (fast panels show first)
@@ -258,8 +261,18 @@ async function summary(req, res, next) {
     const requested = req.query.part && parts[req.query.part] ? [req.query.part] : Object.keys(parts);
     const out = {};
     await Promise.all(requested.map(async (key) => {
-      try { out[key] = await parts[key](); }
-      catch (e) { out[key] = { error: e.message }; }
+      const cacheKey = `dash:summary:${key}:${count}`;
+      if (!fresh && cacheService) {
+        const cached = cacheService.get(cacheKey);
+        if (cached !== undefined && cached !== null) { out[key] = cached; return; }
+      }
+      try {
+        const data = await parts[key]();
+        out[key] = data;
+        if (cacheService) cacheService.set(cacheKey, data, SUMMARY_TTL);
+      } catch (e) {
+        out[key] = { error: e.message };
+      }
     }));
 
     res.json(formatSuccessResponse(out));
