@@ -70,14 +70,6 @@ health_url() {
   fi
 }
 
-curl_opts() {
-  if [ "${ENABLE_HTTPS:-false}" = "true" ]; then
-    echo "-sk"
-  else
-    echo "-s"
-  fi
-}
-
 validate_env() {
   load_env
   if [ -z "${API_KEY:-}" ]; then
@@ -90,17 +82,25 @@ validate_env() {
   fi
 }
 
+# Check /health FROM INSIDE the container. This is reliable no matter how the port
+# is published on the host (e.g. bound to a Tailscale IP, which the host itself often
+# cannot curl back through Docker's port forwarding).
+container_healthy() {
+  local scheme="http" insecure=""
+  if [ "${ENABLE_HTTPS:-false}" = "true" ]; then scheme="https"; insecure="--no-check-certificate"; fi
+  docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE_NAME" \
+    wget -q $insecure -O /dev/null "${scheme}://localhost:3000/health" 2>/dev/null
+}
+
 wait_healthy() {
   local url
   url=$(health_url)
-  local opts
-  opts=$(curl_opts)
-  echo "Waiting for health check (${url})..."
+  echo "Waiting for health check..."
   local retries=30
   while [ $retries -gt 0 ]; do
-    STATUS=$(curl $opts -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
-    if [ "$STATUS" = "200" ]; then
+    if container_healthy; then
       echo "Service is healthy!"
+      echo "Reachable at: ${url}"
       return 0
     fi
     retries=$((retries - 1))
@@ -218,17 +218,12 @@ cmd_logs() {
 
 cmd_status() {
   load_env
-  local url
-  url=$(health_url)
-  local opts
-  opts=$(curl_opts)
-  local http_code
-  http_code=$(curl $opts -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
-  if [ "$http_code" = "200" ]; then
-    echo "Status: running"
+  if container_healthy; then
+    echo "Status: running and healthy"
     show_status
   else
-    echo "Status: not running (HTTP $http_code)"
+    echo "Status: not healthy (checked /health inside the container)"
+    echo "Check logs: ${CMD_NAME} logs"
   fi
 }
 

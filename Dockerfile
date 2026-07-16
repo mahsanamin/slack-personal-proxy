@@ -16,8 +16,10 @@ USER appuser
 
 EXPOSE 3000
 
+# Pick the scheme from ENABLE_HTTPS so the healthcheck matches how the app serves
+# (previously hardcoded https, which marked HTTP deployments as unhealthy).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider --no-check-certificate https://localhost:3000/health || exit 1
+  CMD sh -c 'if [ "$ENABLE_HTTPS" = "true" ]; then wget -q --spider --no-check-certificate https://localhost:3000/health; else wget -q --spider http://localhost:3000/health; fi' || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "src/server.js"]
