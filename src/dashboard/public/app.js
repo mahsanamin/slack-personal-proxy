@@ -50,11 +50,27 @@ async function api(path, opts) {
 }
 
 // ---- boot ----
+const VALID_TABS = ['overview', 'keys', 'dm', 'setup', 'security'];
 let STATE = { tab: 'overview', status: null };
+
+function tabFromHash() {
+  const h = (location.hash || '').replace(/^#/, '');
+  return VALID_TABS.includes(h) ? h : 'overview';
+}
+
+// Keep the active tab in sync with the URL hash (refresh, back/forward, deep links).
+window.addEventListener('hashchange', () => {
+  const t = tabFromHash();
+  if (t !== STATE.tab && STATE.status) {
+    STATE.tab = t;
+    renderMain();
+  }
+});
 
 async function boot() {
   try {
     STATE.status = await api('/api/status');
+    STATE.tab = tabFromHash();
     renderMain();
   } catch (err) {
     if (err.status === 401) {
@@ -159,7 +175,8 @@ function renderMain() {
   const tabs = el('div', { class: 'tabs' }, TABS.map(([id, label]) =>
     el('button', {
       class: 'tab' + (STATE.tab === id ? ' active' : ''), text: label,
-      onclick: () => { STATE.tab = id; renderMain(); },
+      // Drive tab changes through the URL hash so refresh / back / forward keep the tab.
+      onclick: () => { if (STATE.tab !== id) location.hash = id; else renderMain(); },
     })
   ));
   const content = el('div', { class: 'content' }, [el('div', { class: 'spinner', text: 'Loading…' })]);
