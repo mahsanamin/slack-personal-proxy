@@ -47,7 +47,8 @@ const config = Object.freeze({
   // Rate limiting
   rateLimit: Object.freeze({
     windowMs: parseInt_(process.env.RATE_LIMIT_WINDOW_MS, 60000),
-    maxRequests: parseInt_(process.env.RATE_LIMIT_MAX_REQUESTS, 200),
+    // Generous default for a personal tool; <=0 disables limiting entirely.
+    maxRequests: parseInt_(process.env.RATE_LIMIT_MAX_REQUESTS, 1000),
   }),
 
   // Slack API throttle (min ms between Slack API calls to avoid 429s)
