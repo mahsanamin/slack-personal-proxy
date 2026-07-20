@@ -93,7 +93,10 @@ describe('Dashboard API', () => {
 
       const del = await agent.delete('/dashboard/api/keys/' + rec.id);
       expect(del.status).toBe(200);
-      expect(configStore.verifyApiKey(key)).toBeNull(); // revoked keys stop working
+      expect(configStore.verifyApiKey(key)).toBeNull(); // deleted keys stop working
+      // Deleted key is removed from the list entirely (hard delete, not soft-revoke).
+      const after = await agent.get('/dashboard/api/keys');
+      expect(after.body.data.keys.find((k) => k.id === rec.id)).toBeUndefined();
     });
 
     test('Slack setup: bad creds rejected, good creds stored & encrypted', async () => {

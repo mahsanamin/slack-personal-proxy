@@ -314,7 +314,6 @@ function showCreatedKey(container, key) {
   ]));
 }
 function keyRow(k, refreshList) {
-  const revoked = !!k.revokedAt;
   return el('div', { class: 'item' }, [
     el('div', { class: 'row', style: 'justify-content:space-between' }, [
       el('div', {}, [
@@ -324,16 +323,14 @@ function keyRow(k, refreshList) {
           el('span', { text: k.lastUsedAt ? 'used ' + timeAgo(k.lastUsedAt) : 'never used' }),
         ]),
       ]),
-      revoked
-        ? el('span', { class: 'badge red', text: 'revoked' })
-        : el('button', {
-            class: 'danger small', text: 'Revoke',
-            onclick: async () => {
-              if (!confirm('Revoke key "' + k.label + '"? Clients using it stop working immediately.')) return;
-              await api('/api/keys/' + k.id, { method: 'DELETE' });
-              refreshList();
-            },
-          }),
+      el('button', {
+        class: 'danger small', text: 'Delete',
+        onclick: async () => {
+          if (!confirm('Delete key "' + k.label + '"? It is removed and any client using it stops working immediately.')) return;
+          await api('/api/keys/' + k.id, { method: 'DELETE' });
+          refreshList();
+        },
+      }),
     ]),
   ]);
 }

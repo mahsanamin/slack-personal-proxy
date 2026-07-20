@@ -45,6 +45,13 @@ class ConfigStore extends EventEmitter {
     await fs.promises.mkdir(this.dataDir, { recursive: true });
 
     this._keys = this._readJson(this._path('apikeys.json'), []);
+    // Purge any legacy soft-revoked keys — revoke is now a hard delete, so a revoked
+    // record should not linger in the list.
+    const active = this._keys.filter((k) => !k.revokedAt);
+    if (active.length !== this._keys.length) {
+      this._keys = active;
+      this._writeJson(this._path('apikeys.json'), this._keys);
+    }
     this._dmUsers = this._readJson(this._path('dm-allowlist.json'), []);
     this.initialized = true;
 
@@ -146,12 +153,13 @@ class ConfigStore extends EventEmitter {
     return { key: secret, meta: this.listKeys().find((k) => k.id === rec.id) };
   }
 
+  /** Hard-delete a key: it is removed from the list entirely and stops working. */
   revokeKey(id) {
-    const rec = this._keys.find((k) => k.id === id && !k.revokedAt);
-    if (!rec) return false;
-    rec.revokedAt = new Date().toISOString();
+    const idx = this._keys.findIndex((k) => k.id === id);
+    if (idx === -1) return false;
+    const [rec] = this._keys.splice(idx, 1);
     this._writeJson(this._path('apikeys.json'), this._keys);
-    logger.info(`API key revoked: ${rec.label} (${rec.prefix})`);
+    logger.info(`API key deleted: ${rec.label} (${rec.prefix})`);
     return true;
   }
 
