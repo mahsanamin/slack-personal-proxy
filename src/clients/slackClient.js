@@ -19,9 +19,18 @@ class SlackClient {
   /**
    * Throttle Slack API calls to avoid hitting rate limits.
    * Serializes requests with a minimum delay between each call.
+   *
+   * The queue is a pure scheduling gate and must NEVER be left in a rejected
+   * state. If it is, every later call chains .then() onto a rejected promise,
+   * so its handler never runs and the ORIGINAL error is re-thrown instantly
+   * without ever contacting Slack. One transient failure (e.g. a genuine
+   * message_not_found for a deleted message) would then break every endpoint
+   * until the process restarted. Keep the caller's promise and the gate
+   * separate: the caller sees the real result or error, the gate always settles
+   * successfully so the next call still runs.
    */
   _throttle(fn) {
-    this._requestQueue = this._requestQueue.then(async () => {
+    const result = this._requestQueue.then(async () => {
       const now = Date.now();
       const elapsed = now - this._lastRequestTime;
       if (elapsed < this._throttleMs) {
@@ -30,7 +39,13 @@ class SlackClient {
       this._lastRequestTime = Date.now();
       return fn();
     });
-    return this._requestQueue;
+
+    // Advance the gate whether or not this call succeeded, and swallow the
+    // rejection here only (the caller still receives it via `result`) so we
+    // never emit an unhandled rejection warning.
+    this._requestQueue = result.then(() => undefined, () => undefined);
+
+    return result;
   }
 
   /**
@@ -114,9 +129,27 @@ class SlackClient {
     return probe.auth.test();
   }
 
+  /**
+   * NOTE: deliberately bypasses _throttle so a saturated queue cannot make the
+   * credential check itself hang. That also means a passing authTest() says
+   * nothing about whether real endpoints work: use healthProbe() for that.
+   */
   async authTest() {
     const result = await this.client.auth.test();
     return result;
+  }
+
+  /**
+   * Cheap end-to-end probe for /health. Goes through _throttle on purpose, so it
+   * exercises the exact path every real endpoint uses instead of only checking
+   * credentials. conversations.list(limit 1) is a tier-2 method, which is well
+   * within limits at the health-check interval.
+   */
+  async healthProbe() {
+    return this._throttle(async () => {
+      await this.client.conversations.list({ limit: 1 });
+      return true;
+    });
   }
 
   async getConversationHistory(channelId, limit = 100, cursor = null, oldest = null, latest = null) {

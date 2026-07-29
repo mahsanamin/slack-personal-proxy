@@ -13,6 +13,10 @@ jest.mock('@slack/web-api', () => ({
         team: 'TestTeam',
       }),
     },
+    // Needed by slackClient.healthProbe(), the end-to-end probe /health runs.
+    conversations: {
+      list: jest.fn().mockResolvedValue({ ok: true, channels: [] }),
+    },
   })),
 }));
 
@@ -43,6 +47,7 @@ const authMiddleware = require('../../../src/middleware/auth');
 const errorHandler = require('../../../src/middleware/errorHandler');
 const apiRoutes = require('../../../src/routes');
 
+const { healthCheck } = require('../../../src/controllers/healthController');
 const SlackClient = require('../../../src/clients/slackClient');
 const CacheService = require('../../../src/services/cacheService');
 const PaginationService = require('../../../src/services/paginationService');
@@ -80,18 +85,10 @@ async function buildApp() {
     next();
   });
 
-  app.get('/health', async (req, res) => {
-    try {
-      const authResult = await req.services.slackClient.authTest();
-      res.json({
-        status: 'healthy',
-        slack_auth: 'valid',
-        slack_team: authResult.team,
-      });
-    } catch {
-      res.json({ status: 'healthy', slack_auth: 'error' });
-    }
-  });
+  // Mount the REAL handler. This used to be a hand-written stub that mirrored
+  // production loosely, so the test passed while the real endpoint misreported
+  // a dead proxy as healthy. Never re-stub this.
+  app.get('/health', healthCheck);
 
   app.use('/api', authMiddleware, apiRoutes);
 
