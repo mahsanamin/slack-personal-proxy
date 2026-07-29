@@ -21,9 +21,39 @@ separate from `X-API-Key`. Crypto helpers: `src/utils/secureCrypto.js`. The API-
 
 ## Workflow (adhoc project — no PR friction)
 
-This is a personal, adhoc project. Skip worktrees and PRs: commit and push changes
-directly to `main`. No feature branches, no PR review step required. This overrides the
-global "use a worktree, never branch in main" preference for THIS repo only.
+This is a personal, adhoc project. Work directly on `develop`: commit and push there,
+no worktree and no feature branch needed. This overrides the global "use a worktree,
+never branch in main" preference for THIS repo only.
+
+`develop` is the deploy branch. The always-on instance tracks it (see Deployment
+below), so anything pushed to `develop` is what actually runs. Keep it green: run
+`npx jest` before pushing.
+
+`main` is the settled line. Promote `develop` into it when a batch is worth
+consolidating, either by PR (`gh pr create --base main --head develop`) or a direct
+`git merge --no-ff develop`. Either is fine; no review step is required.
+
+## Deployment
+
+Two instances exist and only one serves traffic. `wslack.wp.mahsanamin.com` resolves
+to this Mac, where nginx-proxy-manager terminates 443 and forwards to
+**`100.100.50.2:8282`** (`backend-server-master`, the always-on Linux box) per
+`/data/nginx/proxy_host/8.conf`. The container on this Mac at `100.100.75.1:8282` is
+NOT routed to, so a local check proves nothing about what routines actually hit.
+
+To deploy:
+
+```bash
+ssh 100.100.50.2
+cd /home/ahsan/mahsanamin/repos/slack-personal-proxy
+git checkout develop && git pull
+docker compose up -d --build      # --build matters: a bare restart keeps the old code
+curl -s localhost:8282/health     # expect status healthy AND slack_api ok
+```
+
+`/health` returns 503 with `status: degraded` when Slack is unreachable, so the
+container correctly flips to `unhealthy` during a real outage. Nothing auto-restarts
+on that (`restart: unless-stopped` ignores health).
 
 ## Slack API Gotchas
 
