@@ -46,10 +46,22 @@ To deploy:
 ```bash
 ssh 100.100.50.2
 cd /home/ahsan/mahsanamin/repos/slack-personal-proxy
-git checkout develop && git pull
-docker compose up -d --build      # --build matters: a bare restart keeps the old code
-curl -s localhost:8282/health     # expect status healthy AND slack_api ok
+./proxy update        # = git pull --ff-only + restart; use this for a normal deploy
 ```
+
+`./proxy restart` is safe for picking up code changes: `cmd_start` runs
+`docker compose up -d --build`, so it rebuilds rather than reusing the old image.
+Use `./proxy update` when you also want the pull.
+
+Verify after deploying, and note the container binds the tailnet IP, NOT localhost,
+so `curl localhost:8282` gives "connection refused" even when it is perfectly fine:
+
+```bash
+curl -s http://100.100.50.2:8282/health
+```
+
+Expect `status: healthy` and `slack_api: ok`. A missing `slack_api` field means the
+rebuild did not take.
 
 `/health` returns 503 with `status: degraded` when Slack is unreachable, so the
 container correctly flips to `unhealthy` during a real outage. Nothing auto-restarts
