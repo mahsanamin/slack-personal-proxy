@@ -19,6 +19,7 @@ const rateLimiter = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
 const apiRoutes = require('./routes');
 const dashboardRoutes = require('./routes/dashboard');
+const { healthCheck } = require('./controllers/healthController');
 const configStore = require('./services/configStore');
 
 const SlackClient = require('./clients/slackClient');
@@ -94,41 +95,10 @@ if (config.enableSwagger) {
   app.get('/docs.json', (req, res) => res.json(swaggerSpec));
 }
 
-// Health endpoint (no auth required)
-app.get('/health', async (req, res) => {
-  const { cacheService, slackClient } = req.services;
-  const { CACHE_PREFIXES } = require('./utils/constants');
-
-  // Check cache first
-  const cached = cacheService.get(CACHE_PREFIXES.HEALTH);
-  if (cached) {
-    return res.json({ ...cached, uptime: Math.floor(process.uptime()) });
-  }
-
-  let slackAuth = 'unknown';
-  let slackTeam = 'unknown';
-  try {
-    const authResult = await slackClient.authTest();
-    slackAuth = 'valid';
-    slackTeam = authResult.team;
-  } catch (err) {
-    slackAuth = 'error';
-    logger.warn(`Health check: Slack auth failed - ${err.message}`);
-  }
-
-  const healthData = {
-    status: 'healthy',
-    uptime: Math.floor(process.uptime()),
-    slack_auth: slackAuth,
-    slack_team: slackTeam,
-    cache_status: config.enableCaching ? 'operational' : 'disabled',
-    memory_usage_mb: Math.round(process.memoryUsage().rss / 1024 / 1024 * 10) / 10,
-    timestamp: new Date().toISOString(),
-  };
-
-  cacheService.set(CACHE_PREFIXES.HEALTH, healthData, config.cache.healthTtl);
-  res.json(healthData);
-});
+// Health endpoint (no auth required). Logic lives in healthController so it is
+// unit-testable; keeping it inline here previously meant the "integration" test
+// re-implemented its own stub handler and never exercised the real one.
+app.get('/health', healthCheck);
 
 // Management dashboard (session-authed UI + endpoints; opt-out via ENABLE_DASHBOARD=false)
 if (config.dashboard.enabled) {
