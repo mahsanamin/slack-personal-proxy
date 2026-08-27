@@ -152,6 +152,11 @@ describe('API auth', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.user_id).toBe('U12345');
     expect(res.body.data.auth_method).toBe('bot_token');
+    expect(res.body.data.api_key).toEqual({
+      id: 'legacy-env',
+      label: 'Legacy .env key',
+      legacy: true,
+    });
   });
 
   test('GET /api/nonexistent returns 404', async () => {

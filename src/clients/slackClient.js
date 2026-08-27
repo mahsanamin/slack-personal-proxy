@@ -22,7 +22,9 @@ class SlackClient {
    * Serializes requests with a minimum delay between each call.
    */
   _throttle(fn) {
-    this._requestQueue = this._requestQueue.then(async () => {
+    // A failed Slack request must reject only its own caller. Keep the queue itself
+    // fulfilled so one unsupported/expired API call does not poison every later call.
+    const request = this._requestQueue.catch(() => undefined).then(async () => {
       const now = Date.now();
       const elapsed = now - this._lastRequestTime;
       if (elapsed < this._throttleMs) {
@@ -31,7 +33,8 @@ class SlackClient {
       this._lastRequestTime = Date.now();
       return fn();
     });
-    return this._requestQueue;
+    this._requestQueue = request.catch(() => undefined);
+    return request;
   }
 
   /**

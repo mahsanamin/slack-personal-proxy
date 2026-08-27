@@ -1,0 +1,20 @@
+{
+  "name": "slackp-project",
+  "interface": {
+    "displayName": "Slackp Project"
+  },
+  "plugins": [
+    {
+      "name": "slackp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/slackp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,8 +1,9 @@
 const { Router } = require('express');
-const { sendMessage, getMessageHistory, deleteMessage } = require('../controllers/messageController');
+const { sendMessage, sendDirectMessage, getMessageHistory, deleteMessage } = require('../controllers/messageController');
 const {
   validateChannelId,
   validateMessageText,
+  validateDmTarget,
   validateMessageTs,
   validateThreadTs,
   validateCount,
@@ -12,6 +13,16 @@ const {
 } = require('../middleware/validator');
 
 const router = Router();
+
+// Send to an allowlisted user without requiring callers to discover a D-channel ID.
+router.post(
+  '/dm/send',
+  validateDmTarget,
+  validateMessageText,
+  validateThreadTs,
+  handleValidationErrors,
+  sendDirectMessage
+);
 
 /**
  * @swagger

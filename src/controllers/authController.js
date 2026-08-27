@@ -13,6 +13,11 @@ async function testAuth(req, res, next) {
       user_name: authResult.user,
       auth_method: slackClient.authMethod,
       is_valid: true,
+      api_key: {
+        id: req.apiKey.id,
+        label: req.apiKey.label,
+        legacy: Boolean(req.apiKey.legacy),
+      },
     }));
   } catch (err) {
     next(err);

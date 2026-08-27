@@ -5,6 +5,15 @@ const c = require('../controllers/dashboardController');
 
 const router = express.Router();
 const PUBLIC_DIR = path.join(__dirname, '..', 'dashboard', 'public');
+const SLACKP_CLI = path.join(__dirname, '..', '..', 'slackp');
+
+// Dependency-free CLI download. This is intentionally outside dashboard session auth:
+// it contains no secrets, and the global IP allowlist still limits it to Tailscale.
+router.get('/slackp', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Type', 'text/x-python; charset=utf-8');
+  res.sendFile(SLACKP_CLI);
+});
 
 // Static SPA shell (HTML/JS/CSS only, no secrets). Still gated by the global ipWhitelist.
 // no-cache => the browser revalidates each load, so an updated app.js/styles.css is

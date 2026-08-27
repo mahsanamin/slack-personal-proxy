@@ -195,10 +195,22 @@ function revokeKey(req, res) {
 // --- DM allowlist ---
 
 const USER_ID_RE = /^[UW][A-Z0-9]+$/;
+const DM_CHANNEL_ID_RE = /^D[A-Z0-9]+$/;
 
 async function resolveDmTarget(services, entry) {
-  const { slackClient, userService } = services;
+  const { slackClient, userService, whitelistService } = services;
   const trimmed = String(entry).trim().replace(/^@/, '');
+
+  if (DM_CHANNEL_ID_RE.test(trimmed)) {
+    const userId = await whitelistService.resolveUserIdFromDmChannel(trimmed);
+    if (!userId) throw new Error('Could not resolve DM channel to a Slack user');
+    let name = userId;
+    try {
+      const u = await slackClient.getUserInfo(userId);
+      name = u?.name || u?.real_name || userId;
+    } catch { /* keep user ID */ }
+    return { entry: trimmed, userId, name };
+  }
 
   if (USER_ID_RE.test(trimmed)) {
     let name = trimmed;

@@ -32,9 +32,9 @@ function timeAgo(iso) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
-function copyCommandBox(command) {
+function copyCommandBox(command, rows) {
   const field = el('textarea', {
-    class: 'mono', readonly: 'readonly', rows: '8', spellcheck: 'false',
+    class: 'mono', readonly: 'readonly', rows: String(rows || 8), spellcheck: 'false',
   });
   field.value = command;
   const button = el('button', {
@@ -317,6 +317,10 @@ async function viewKeys(root) {
   const listBody = el('div');         // only this refreshes after create/revoke
   const label = el('input', { type: 'text', id: 'kl', placeholder: 'e.g. my-laptop, cron-job' });
   const listCount = el('span', { class: 'count', text: '' });
+  const installCommand = 'sudo mkdir -p /usr/local/bin && sudo curl -fsSL ' + location.origin +
+    '/dashboard/slackp -o /usr/local/bin/slackp && sudo chmod 755 /usr/local/bin/slackp && slackp --help';
+  const connectCommand = 'slackp connect ' + location.origin;
+  const verifyCommands = 'slackp status\nslackp --help';
 
   async function refreshList() {
     try {
@@ -339,11 +343,20 @@ async function viewKeys(root) {
 
   root.appendChild(el('div', { class: 'grid' }, [
     el('div', { class: 'card' }, [
-      el('h2', { text: 'Create API key' }),
-      el('p', { class: 'muted', text: 'Keys are shown once, then stored only as a hash. Use them in the X-API-Key header.' }),
-      created,
+      el('h2', { text: 'Set up the slackp CLI' }),
+      el('h3', { class: 'step-title first', text: '1. Install slackp on the other machine' }),
+      el('p', { class: 'muted', text: 'Copy and run this command in its terminal. It asks for the machine password because it installs slackp system-wide. Python 3.9+ is required.' }),
+      copyCommandBox(installCommand, 4),
+      el('h3', { class: 'step-title', text: '2. Generate its secure key' }),
+      el('p', { class: 'muted', text: 'Give the machine a recognizable label. Generate the key, copy it immediately, and do not share or screenshot it.' }),
       el('label', { text: 'Label' }), label,
       el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
+      created,
+      el('h3', { class: 'step-title', text: '3. Connect the machine' }),
+      el('p', { class: 'muted', text: 'Run this command there, then paste the secure key at the hidden prompt:' }),
+      copyCommandBox(connectCommand, 2),
+      el('p', { class: 'muted', text: 'Finally, verify the connection and view every available command:' }),
+      copyCommandBox(verifyCommands, 2),
     ]),
     el('div', { class: 'card' }, [
       el('h2', {}, ['Existing keys', listCount]),
@@ -402,7 +415,7 @@ async function viewDm(root) {
     const d = await api('/api/dm-allowlist');
     clear(root);
     const msg = el('div');
-    const entry = el('input', { type: 'text', placeholder: '@username, email, or U0123ABC' });
+    const entry = el('input', { type: 'text', placeholder: '@username, email, U0123ABC, or D0123ABC' });
     const add = async () => {
       clear(msg);
       try {
@@ -414,7 +427,7 @@ async function viewDm(root) {
     root.appendChild(el('div', { class: 'grid' }, [
       el('div', { class: 'card' }, [
         el('h2', { text: 'Add person allowed to receive DMs' }),
-        el('p', { class: 'muted', text: 'By default only you can be DMed. Add people here — changes apply live, no restart.' }),
+        el('p', { class: 'muted', text: 'Add a username, email, user ID (U…), or DM conversation ID (D…). Changes apply live with no restart.' }),
         msg,
         el('label', { text: 'User' }), entry,
         el('div', { class: 'actions' }, [el('button', { text: 'Add', onclick: add })]),

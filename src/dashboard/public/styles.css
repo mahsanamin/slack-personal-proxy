@@ -60,6 +60,11 @@ a:hover { text-decoration: underline; }
 .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
 .card h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; justify-content: space-between; }
 .card h2 .count { color: var(--muted); font-weight: 400; font-size: 13px; }
+.step-title {
+  font-size: 16px; margin: 24px 0 6px; padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.step-title.first { margin-top: 6px; padding-top: 0; border-top: 0; }
 
 /* Lists */
 .item { padding: 10px 0; border-bottom: 1px solid var(--border); }

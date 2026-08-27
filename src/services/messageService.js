@@ -479,6 +479,32 @@ class MessageService {
     };
   }
 
+  async sendDirectMessage(target, text, threadTs = null) {
+    const normalized = String(target || '').trim().replace(/^@/, '');
+    const userId = this.whitelist.resolveUserId(normalized);
+    if (!userId) {
+      throw { ...ERROR_CODES.USER_NOT_FOUND, details: { user: target } };
+    }
+
+    const dmCheck = this.whitelist.canSendDmToUser(userId);
+    if (!dmCheck.allowed) {
+      throw dmCheck.error;
+    }
+
+    const channel = await this.slack.openDmChannel(userId);
+    if (!channel || !channel.id) {
+      throw { ...ERROR_CODES.USER_NOT_FOUND, details: { user: target } };
+    }
+    logger.info(`Sending direct message to ${normalized} (${channel.id})`);
+    const result = await this.slack.postMessage(channel.id, text, threadTs);
+    return {
+      ok: result.ok,
+      channel: result.channel,
+      ts: result.ts,
+      message: result.message,
+    };
+  }
+
   async getUserName(userId) {
     if (!userId) return 'Unknown';
 

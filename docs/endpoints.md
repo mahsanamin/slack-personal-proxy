@@ -16,6 +16,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 | Method | Path | Description | Body |
 |--------|------|-------------|------|
 | POST | `/api/messages/:channelId/send` | Send message (write-gated) | `{ "text": "...", "thread_ts": "..." }` |
+| POST | `/api/messages/dm/send` | Send DM by allowlisted `@username` or user ID | `{ "target": "@alice", "text": "...", "thread_ts": "..." }` |
 | GET | `/api/messages/:channelId/history` | Message history from channel/DM | `?count=100&oldest=...&latest=...&verbose=false` |
 | DELETE | `/api/messages/:channelId/:messageTs` | Delete a message (write-gated) | — |
 
@@ -67,7 +68,7 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/auth/test` | Validate credentials and show workspace info |
+| GET | `/api/auth/test` | Validate credentials and show workspace plus current API-key metadata |
 
 ## Dashboard
 
@@ -89,7 +90,8 @@ All routes are still behind the global IP allowlist.
 | POST | `/dashboard/api/keys` | session | Create a key (secret shown once) |
 | DELETE | `/dashboard/api/keys/:id` | session | Revoke a key |
 | GET | `/dashboard/api/dm-allowlist` | session | List DM-allowed users |
-| POST | `/dashboard/api/dm-allowlist` | session | Add a user (by @name / email / U-id), hot-reload |
+| GET | `/dashboard/slackp` | none | Download the dependency-free `slackp` CLI (still IP-allowlisted) |
+| POST | `/dashboard/api/dm-allowlist` | session | Add a user (by @name / email / U-id / D-id), hot-reload |
 | DELETE | `/dashboard/api/dm-allowlist/:id` | session | Remove a user |
 | GET | `/dashboard/api/summary` | session | Aggregated mentions + threads for the landing view |
 

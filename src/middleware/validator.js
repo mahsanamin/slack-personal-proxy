@@ -55,6 +55,13 @@ const validateMessageText = body('text')
   .isLength({ min: 1, max: 40000 })
   .withMessage('Message text must be between 1 and 40000 characters.');
 
+const validateDmTarget = body('target')
+  .trim()
+  .notEmpty()
+  .withMessage('DM target is required.')
+  .isLength({ min: 2, max: 100 })
+  .withMessage('DM target must be between 2 and 100 characters.');
+
 const validateThreadTs = body('thread_ts')
   .optional()
   .matches(TIMESTAMP_REGEX)
@@ -84,6 +91,7 @@ module.exports = {
   validateSearchQuery,
   validateSortOrder,
   validateMessageText,
+  validateDmTarget,
   validateThreadTs,
   validateMessageTs,
   validateOptionalTimestamp,

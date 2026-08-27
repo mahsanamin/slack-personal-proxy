@@ -32,6 +32,9 @@ function buildApp() {
     },
     mentionService: { getAllMentions: async () => ({ mentions: [] }), getMentionThreads: async () => ({ threads: [] }) },
     activityService: { getThreadsImIn: async () => ({ threads: [] }), getMyThreads: async () => ({ threads: [] }) },
+    whitelistService: {
+      resolveUserIdFromDmChannel: async (channelId) => channelId === 'D020BE909FV' ? 'U1' : null,
+    },
   };
   const app = express();
   app.use(express.json());
@@ -52,6 +55,13 @@ describe('Dashboard API', () => {
     const res = await request(app).get('/dashboard/api/bootstrap');
     expect(res.status).toBe(200);
     expect(res.body.data.dashboardConfigured).toBe(true);
+  });
+
+  test('slackp CLI is downloadable without a dashboard session', async () => {
+    const res = await request(app).get('/dashboard/slackp');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('#!/usr/bin/env python3');
+    expect(res.text).toContain('Agent-friendly CLI for Slack Personal Proxy');
   });
 
   test('protected endpoints reject without a session', async () => {
@@ -121,6 +131,23 @@ describe('Dashboard API', () => {
       const rec = list.body.data.users.find((u) => u.userId === 'U999');
       expect(rec).toBeTruthy();
       expect(configStore.dmAllowlistEntries()).toContain('U999');
+
+      const del = await agent.delete('/dashboard/api/dm-allowlist/' + rec.id);
+      expect(del.status).toBe(200);
+    });
+
+    test('DM allowlist: accepts a D-channel ID and resolves it to a user', async () => {
+      const add = await agent.post('/dashboard/api/dm-allowlist').send({ entry: 'D020BE909FV' });
+      expect(add.status).toBe(200);
+      expect(add.body.data.added).toMatchObject({
+        entry: 'D020BE909FV',
+        userId: 'U1',
+        name: 'someuser',
+      });
+
+      const list = await agent.get('/dashboard/api/dm-allowlist');
+      const rec = list.body.data.users.find((u) => u.entry === 'D020BE909FV');
+      expect(rec).toBeTruthy();
 
       const del = await agent.delete('/dashboard/api/dm-allowlist/' + rec.id);
       expect(del.status).toBe(200);

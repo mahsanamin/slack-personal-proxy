@@ -1,0 +1,4 @@
+interface:
+  display_name: "Slack Personal Proxy"
+  short_description: "Use Slack safely through the slackp CLI"
+  default_prompt: "Use $slackp to read the relevant Slack context and help me act on it safely."

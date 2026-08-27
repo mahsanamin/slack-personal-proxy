@@ -145,6 +145,45 @@ Notes:
 - **Backward compatible**: the legacy `.env` `API_KEY` and all existing `X-API-Key` calls keep working.
 - Not network-exposed by default (`BIND_ADDRESS=127.0.0.1` + localhost-only allowlist).
 
+## `slackp` CLI
+
+Install the agent-friendly CLI from any machine on the tailnet (Python 3.9+, no
+packages required):
+
+```bash
+sudo mkdir -p /usr/local/bin && sudo curl -fsSL http://100.100.50.30:8282/dashboard/slackp -o /usr/local/bin/slackp && sudo chmod 755 /usr/local/bin/slackp && slackp --help
+```
+
+The same command is available with a **Copy command** button under **Dashboard → API
+Keys**. This system-wide install makes `slackp` directly available from every shell.
+From a repository checkout, use
+`sudo ./slackp install --path /usr/local/bin/slackp` for the same result.
+
+Create a separate key for the machine at **Dashboard → API Keys**, then connect through
+the hidden key prompt:
+
+```bash
+slackp connect http://100.100.50.30:8282
+slackp status
+```
+
+Typical commands:
+
+```bash
+slackp unread --count 10
+slackp mentions --count 20
+slackp search 'from:alice deployment'
+slackp thread 'https://workspace.slack.com/archives/C.../p...'
+slackp channels
+slackp recent C01234567
+slackp send @alice 'Hello in a DM'      # resolves the D-channel automatically
+slackp send C01234567 'Hello'       # confirms before sending
+```
+
+Output is JSON by default for reliable LLM use. Named profiles allow multiple servers
+or identities, while dashboard keys allow each machine/agent to be revoked separately.
+See [`docs/cli.md`](docs/cli.md) for all usage and the included Codex plugin.
+
 ## API Endpoints
 
 All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.env`.
@@ -168,6 +207,7 @@ All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.en
 | GET | `/api/activity/threads-im-in?count=20` | Threads you participated in |
 | GET | `/api/activity/my-threads?count=20&includeReplies=true` | Threads you started |
 | POST | `/api/messages/:channelId/send` | Send message (write-whitelisted only) |
+| POST | `/api/messages/dm/send` | Send DM by allowlisted `@username` or user ID |
 | GET | `/api/admin/whitelist-status` | Whitelist config |
 
 ## Environment Variables

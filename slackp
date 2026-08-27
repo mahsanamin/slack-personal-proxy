@@ -1,0 +1,442 @@
+#!/usr/bin/env python3
+"""Agent-friendly CLI for Slack Personal Proxy. Requires Python 3.9+ only."""
+
+import argparse
+import getpass
+import json
+import os
+import shutil
+import ssl
+import stat
+import sys
+import tempfile
+from pathlib import Path
+from urllib import error, parse, request
+
+VERSION = "1.0.1"
+DEFAULT_CONFIG = Path(os.environ.get("SLACKP_CONFIG", "~/.config/slackp/config.json")).expanduser()
+
+
+class SlackpError(Exception):
+    def __init__(self, message, code="SLACKP_ERROR", status=None, details=None):
+        super().__init__(message)
+        self.code = code
+        self.status = status
+        self.details = details
+
+
+def emit(value, pretty=False, stream=sys.stdout):
+    json.dump(value, stream, indent=2 if pretty else None, separators=None if pretty else (",", ":"))
+    stream.write("\n")
+
+
+def fail(message, code="SLACKP_ERROR", status=None, details=None, pretty=False):
+    payload = {"success": False, "error": {"code": code, "message": str(message)}}
+    if status is not None:
+        payload["error"]["status"] = status
+    if details:
+        payload["error"]["details"] = details
+    emit(payload, pretty=pretty, stream=sys.stderr)
+
+
+def load_config(required=False):
+    if not DEFAULT_CONFIG.exists():
+        if required:
+            raise SlackpError(
+                "No connection configured. Run: slackp connect http://TAILSCALE-IP:8282",
+                "NOT_CONNECTED",
+            )
+        return {"version": 1, "current": None, "profiles": {}}
+    try:
+        data = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SlackpError("Could not read config: %s" % exc, "BAD_CONFIG")
+    if not isinstance(data.get("profiles"), dict):
+        raise SlackpError("Config has an invalid profiles object", "BAD_CONFIG")
+    return data
+
+
+def save_config(data):
+    DEFAULT_CONFIG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, tmp_name = tempfile.mkstemp(prefix=".config-", dir=str(DEFAULT_CONFIG.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+        os.chmod(tmp_name, 0o600)
+        os.replace(tmp_name, DEFAULT_CONFIG)
+        os.chmod(DEFAULT_CONFIG, 0o600)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+
+
+def normalize_url(value):
+    value = value.strip().rstrip("/")
+    parsed = parse.urlparse(value)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise SlackpError("Server URL must start with http:// or https://", "BAD_URL")
+    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
+        raise SlackpError("Server URL must not include a path, query, or fragment", "BAD_URL")
+    return value
+
+
+def selected_profile(args, required=True):
+    config = load_config(required=required)
+    name = getattr(args, "profile", None) or os.environ.get("SLACKP_PROFILE") or config.get("current")
+    profile = config.get("profiles", {}).get(name) if name else None
+    if required and not profile:
+        raise SlackpError(
+            "Profile is not configured. Run slackp profiles, or slackp connect URL --name NAME",
+            "PROFILE_NOT_FOUND",
+        )
+    return config, name, profile
+
+
+def api_call(profile, method, path, params=None, body=None, auth=True):
+    if not path.startswith("/"):
+        path = "/" + path
+    url = profile["url"] + path
+    if params:
+        cleaned = {key: value for key, value in params.items() if value is not None}
+        if cleaned:
+            url += "?" + parse.urlencode(cleaned)
+    headers = {"Accept": "application/json", "User-Agent": "slackp/%s" % VERSION}
+    if auth:
+        key = profile.get("key")
+        if not key:
+            raise SlackpError("Profile has no API key; reconnect it", "MISSING_API_KEY")
+        headers["X-API-Key"] = key
+    payload = None
+    if body is not None:
+        payload = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=payload, headers=headers, method=method.upper())
+    context = None
+    if profile.get("insecure") and url.startswith("https://"):
+        context = ssl._create_unverified_context()
+    try:
+        with request.urlopen(req, timeout=profile.get("timeout", 30), context=context) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {"success": True}
+    except error.HTTPError as exc:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            server = json.loads(raw)
+            server_error = server.get("error", {})
+            message = server_error.get("message") or "Server returned HTTP %s" % exc.code
+            code = server_error.get("code") or "HTTP_ERROR"
+            details = server_error.get("details")
+        except ValueError:
+            message, code, details = "Server returned HTTP %s" % exc.code, "HTTP_ERROR", {"body": raw[:500]}
+        raise SlackpError(message, code, status=exc.code, details=details)
+    except error.URLError as exc:
+        raise SlackpError("Could not reach %s: %s" % (profile["url"], exc.reason), "CONNECTION_FAILED")
+    except (ValueError, TimeoutError) as exc:
+        raise SlackpError("Invalid response from server: %s" % exc, "BAD_RESPONSE")
+
+
+def bool_text(value):
+    return "true" if value else "false"
+
+
+def require_confirmation(args, action):
+    if getattr(args, "yes", False):
+        return
+    if not sys.stdin.isatty():
+        raise SlackpError("%s requires --yes in non-interactive use" % action, "CONFIRMATION_REQUIRED")
+    answer = input("%s [y/N]: " % action).strip().lower()
+    if answer not in ("y", "yes"):
+        raise SlackpError("Cancelled", "CANCELLED")
+
+
+def cmd_connect(args):
+    url = normalize_url(args.url)
+    if args.key_stdin:
+        key = sys.stdin.readline().strip()
+    else:
+        key = os.environ.get("SLACKP_API_KEY") or getpass.getpass("API key (input hidden): ").strip()
+    if not key:
+        raise SlackpError("API key cannot be empty", "MISSING_API_KEY")
+    profile = {"url": url, "key": key, "insecure": bool(args.insecure), "timeout": args.timeout}
+    auth = api_call(profile, "GET", "/api/auth/test")
+    config = load_config()
+    config.setdefault("profiles", {})[args.name] = profile
+    config["current"] = args.name
+    save_config(config)
+    return {
+        "success": True,
+        "data": {
+            "connected": True,
+            "profile": args.name,
+            "url": url,
+            "config": str(DEFAULT_CONFIG),
+            "auth": auth.get("data", auth),
+        },
+    }
+
+
+def cmd_profiles(args):
+    config = load_config()
+    rows = []
+    for name, profile in sorted(config.get("profiles", {}).items()):
+        key = profile.get("key", "")
+        rows.append({
+            "name": name,
+            "current": name == config.get("current"),
+            "url": profile.get("url"),
+            "key": (key[:8] + "…") if key else None,
+            "insecure": bool(profile.get("insecure")),
+        })
+    return {"success": True, "data": {"profiles": rows, "config": str(DEFAULT_CONFIG)}}
+
+
+def cmd_use(args):
+    config = load_config(required=True)
+    if args.name not in config.get("profiles", {}):
+        raise SlackpError("Unknown profile: %s" % args.name, "PROFILE_NOT_FOUND")
+    config["current"] = args.name
+    save_config(config)
+    return {"success": True, "data": {"current": args.name}}
+
+
+def cmd_disconnect(args):
+    config, name, _profile = selected_profile(args)
+    config["profiles"].pop(name, None)
+    if config.get("current") == name:
+        config["current"] = next(iter(config["profiles"]), None)
+    save_config(config)
+    return {"success": True, "data": {"removed": name, "current": config.get("current")}}
+
+
+def cmd_status(args):
+    _config, name, profile = selected_profile(args)
+    auth = api_call(profile, "GET", "/api/auth/test")
+    return {"success": True, "data": {"profile": name, "url": profile["url"], "auth": auth.get("data", auth)}}
+
+
+def cmd_unread(args, profile):
+    common = {"count": args.count, "verbose": bool_text(args.verbose)}
+    mentions = api_call(profile, "GET", "/api/mentions/all", {**common, "includeThreads": "false"})
+    threads = api_call(profile, "GET", "/api/activity/threads-im-in", common)
+    mine = api_call(profile, "GET", "/api/activity/my-threads", {**common, "includeReplies": "true"})
+    return {
+        "success": True,
+        "data": {
+            "mentions": mentions.get("data", {}).get("mentions", []),
+            "threads_im_in": threads.get("data", {}).get("threads", []),
+            "my_threads": mine.get("data", {}).get("threads", []),
+        },
+        "meta": {"source_calls": 3},
+    }
+
+
+def run_api_command(args, profile):
+    command = args.command
+    verbose = bool_text(getattr(args, "verbose", False))
+    if command == "health":
+        return api_call(profile, "GET", "/health", auth=False)
+    if command == "auth":
+        return api_call(profile, "GET", "/api/auth/test")
+    if command == "unread":
+        return cmd_unread(args, profile)
+    if command == "mentions":
+        return api_call(profile, "GET", "/api/mentions/all", {
+            "count": args.count, "includeThreads": bool_text(not args.no_threads), "verbose": verbose,
+        })
+    if command == "mention-threads":
+        return api_call(profile, "GET", "/api/mentions/threads", {"count": args.count, "verbose": verbose})
+    if command == "threads":
+        return api_call(profile, "GET", "/api/activity/threads-im-in", {"count": args.count, "verbose": verbose})
+    if command == "my-threads":
+        return api_call(profile, "GET", "/api/activity/my-threads", {
+            "count": args.count, "includeReplies": bool_text(not args.no_replies), "verbose": verbose,
+        })
+    if command == "search":
+        return api_call(profile, "GET", "/api/search/messages", {
+            "query": args.query, "count": args.count, "includeThreads": bool_text(not args.no_threads),
+            "sortOrder": args.sort, "verbose": verbose,
+        })
+    if command == "channels":
+        return api_call(profile, "GET", "/api/channels", {"type": args.type})
+    if command == "channel":
+        return api_call(profile, "GET", "/api/channels/%s/info" % parse.quote(args.channel_id, safe=""))
+    if command == "recent":
+        return api_call(profile, "GET", "/api/channels/%s/recent-messages" % parse.quote(args.channel_id, safe=""), {
+            "count": args.count, "includeThreads": bool_text(not args.no_threads), "verbose": verbose,
+        })
+    if command == "history":
+        return api_call(profile, "GET", "/api/messages/%s/history" % parse.quote(args.channel_id, safe=""), {
+            "count": args.count, "oldest": args.oldest, "latest": args.latest, "verbose": verbose,
+        })
+    if command == "thread":
+        if args.timestamp:
+            path = "/api/conversations/%s/thread/%s" % (
+                parse.quote(args.target, safe=""), parse.quote(args.timestamp, safe=""),
+            )
+            return api_call(profile, "GET", path, {"verbose": verbose})
+        if not args.target.startswith(("http://", "https://")):
+            raise SlackpError("Use a Slack permalink, or provide CHANNEL_ID TIMESTAMP", "BAD_ARGUMENT")
+        return api_call(profile, "GET", "/api/conversations/permalink", {"url": args.target, "verbose": verbose})
+    if command == "context":
+        return api_call(profile, "GET", "/api/conversations/%s/context" % parse.quote(args.channel_id, safe=""), {
+            "messageTs": args.timestamp, "before": args.before, "after": args.after, "verbose": verbose,
+        })
+    if command == "users":
+        return api_call(profile, "GET", "/api/users", {
+            "includeDeleted": bool_text(args.include_deleted), "includeBots": bool_text(args.include_bots),
+        })
+    if command == "user":
+        return api_call(profile, "GET", "/api/users/%s/profile" % parse.quote(args.user_id, safe=""))
+    if command == "user-by-email":
+        return api_call(profile, "GET", "/api/users/by-email", {"email": args.email})
+    if command == "send":
+        text = args.text
+        if args.text_stdin or text is None:
+            text = sys.stdin.read().rstrip("\n")
+        if not text:
+            raise SlackpError("Message text cannot be empty", "BAD_ARGUMENT")
+        require_confirmation(args, "Send message to %s?" % args.target)
+        body = {"text": text}
+        if args.thread:
+            body["thread_ts"] = args.thread
+        if args.target.startswith("@") or args.target.startswith("U"):
+            body["target"] = args.target
+            return api_call(profile, "POST", "/api/messages/dm/send", body=body)
+        return api_call(profile, "POST", "/api/messages/%s/send" % parse.quote(args.target, safe=""), body=body)
+    if command == "delete":
+        require_confirmation(args, "Delete message %s from %s?" % (args.timestamp, args.channel_id))
+        return api_call(profile, "DELETE", "/api/messages/%s/%s" % (
+            parse.quote(args.channel_id, safe=""), parse.quote(args.timestamp, safe="")))
+    if command == "request":
+        method = args.method.upper()
+        body = None
+        if args.data_stdin:
+            raw = sys.stdin.read()
+            body = json.loads(raw) if raw.strip() else None
+        elif args.data:
+            body = json.loads(args.data)
+        if method not in ("GET", "HEAD"):
+            require_confirmation(args, "%s %s?" % (method, args.path))
+        return api_call(profile, method, args.path, body=body)
+    raise SlackpError("Unknown command: %s" % command, "BAD_COMMAND")
+
+
+def cmd_install(args):
+    source = Path(__file__).resolve()
+    target = Path(args.path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and not args.force and target.resolve() != source:
+        raise SlackpError("Target exists; use --force to replace it: %s" % target, "TARGET_EXISTS")
+    if target.resolve() != source:
+        fd, tmp_name = tempfile.mkstemp(prefix=".slackp-", dir=str(target.parent))
+        os.close(fd)
+        try:
+            shutil.copyfile(source, tmp_name)
+            os.chmod(tmp_name, 0o755)
+            os.replace(tmp_name, target)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+    else:
+        os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR)
+    return {"success": True, "data": {"installed": str(target), "on_path": str(target.parent) in os.environ.get("PATH", "").split(os.pathsep)}}
+
+
+def add_count(parser, default=20, maximum=50):
+    def bounded_count(value):
+        try:
+            number = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError("must be an integer")
+        if number < 1 or number > maximum:
+            raise argparse.ArgumentTypeError("must be between 1 and %s" % maximum)
+        return number
+    parser.add_argument("--count", type=bounded_count, default=default, metavar="COUNT")
+
+
+def add_verbose(parser):
+    parser.add_argument("--verbose", action="store_true", help="Return full Slack objects")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="slackp",
+        description="Agent-friendly CLI for a Tailscale-accessible Slack Personal Proxy",
+        epilog="Keys are created/revoked in Dashboard → API Keys. JSON is written to stdout; errors to stderr.",
+    )
+    parser.add_argument("--version", action="version", version="slackp %s" % VERSION)
+    parser.add_argument("--profile", help="Connection profile (or SLACKP_PROFILE)")
+    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("connect", help="Test and securely save a server connection")
+    p.add_argument("url", help="Server root, e.g. http://100.100.50.30:8282")
+    p.add_argument("--name", default="default", help="Profile name (default: default)")
+    p.add_argument("--key-stdin", action="store_true", help="Read API key from first stdin line")
+    p.add_argument("--insecure", action="store_true", help="Allow a self-signed HTTPS certificate")
+    p.add_argument("--timeout", type=int, default=30)
+
+    sub.add_parser("profiles", aliases=["keys"], help="List local profiles and masked keys")
+    p = sub.add_parser("use", help="Select the default profile"); p.add_argument("name")
+    sub.add_parser("disconnect", help="Remove the selected local profile")
+    sub.add_parser("status", help="Show selected profile and verify authentication")
+    sub.add_parser("health", help="Show server and Slack health")
+    sub.add_parser("auth", help="Show authenticated Slack identity and API-key metadata")
+
+    p = sub.add_parser("unread", help="Mentions plus threads you joined or started"); add_count(p); add_verbose(p)
+    p = sub.add_parser("mentions", help="List recent mentions"); add_count(p); add_verbose(p); p.add_argument("--no-threads", action="store_true")
+    p = sub.add_parser("mention-threads", help="List threads where you were mentioned"); add_count(p); add_verbose(p)
+    p = sub.add_parser("threads", help="List threads you participated in"); add_count(p); add_verbose(p)
+    p = sub.add_parser("my-threads", help="List threads you started"); add_count(p); add_verbose(p); p.add_argument("--no-replies", action="store_true")
+    p = sub.add_parser("search", help="Search Slack messages"); p.add_argument("query"); add_count(p, 10, 20); add_verbose(p); p.add_argument("--no-threads", action="store_true"); p.add_argument("--sort", choices=("timestamp", "score"), default="timestamp")
+    p = sub.add_parser("channels", help="List channels"); p.add_argument("--type", default="public_channel,private_channel")
+    p = sub.add_parser("channel", help="Get channel details"); p.add_argument("channel_id")
+    p = sub.add_parser("recent", help="Get recent channel messages"); p.add_argument("channel_id"); add_count(p, 5, 10); add_verbose(p); p.add_argument("--no-threads", action="store_true")
+    p = sub.add_parser("history", help="Get channel or DM history"); p.add_argument("channel_id"); add_count(p, 100, 200); add_verbose(p); p.add_argument("--oldest"); p.add_argument("--latest")
+    p = sub.add_parser("thread", help="Read a thread by permalink or CHANNEL_ID TIMESTAMP"); p.add_argument("target"); p.add_argument("timestamp", nargs="?"); add_verbose(p)
+    p = sub.add_parser("context", help="Read messages around a timestamp"); p.add_argument("channel_id"); p.add_argument("timestamp"); p.add_argument("--before", type=int, default=5, choices=range(1, 11)); p.add_argument("--after", type=int, default=5, choices=range(1, 11)); add_verbose(p)
+    p = sub.add_parser("users", help="List workspace users"); p.add_argument("--include-deleted", action="store_true"); p.add_argument("--include-bots", action="store_true")
+    p = sub.add_parser("user", help="Get a user profile"); p.add_argument("user_id")
+    p = sub.add_parser("user-by-email", help="Find a user and DM channel"); p.add_argument("email")
+    p = sub.add_parser("send", help="Send to a channel, D-channel, U-user ID, or @username"); p.add_argument("target"); p.add_argument("text", nargs="?"); p.add_argument("--text-stdin", action="store_true"); p.add_argument("--thread"); p.add_argument("--yes", action="store_true")
+    p = sub.add_parser("delete", help="Delete a message"); p.add_argument("channel_id"); p.add_argument("timestamp"); p.add_argument("--yes", action="store_true")
+    p = sub.add_parser("request", help="Advanced raw API request"); p.add_argument("method"); p.add_argument("path"); p.add_argument("--data"); p.add_argument("--data-stdin", action="store_true"); p.add_argument("--yes", action="store_true")
+    p = sub.add_parser("install", help="Install slackp on PATH"); p.add_argument("--path", default="~/.local/bin/slackp"); p.add_argument("--force", action="store_true")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "connect":
+            result = cmd_connect(args)
+        elif args.command in ("profiles", "keys"):
+            result = cmd_profiles(args)
+        elif args.command == "use":
+            result = cmd_use(args)
+        elif args.command == "disconnect":
+            result = cmd_disconnect(args)
+        elif args.command == "status":
+            result = cmd_status(args)
+        elif args.command == "install":
+            result = cmd_install(args)
+        else:
+            _config, _name, profile = selected_profile(args)
+            result = run_api_command(args, profile)
+        emit(result, pretty=args.pretty)
+        return 0
+    except SlackpError as exc:
+        fail(exc, exc.code, exc.status, exc.details, pretty=args.pretty)
+        return 1
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        fail(exc, "LOCAL_ERROR", pretty=args.pretty)
+        return 1
+    except KeyboardInterrupt:
+        fail("Interrupted", "INTERRUPTED", pretty=args.pretty)
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())

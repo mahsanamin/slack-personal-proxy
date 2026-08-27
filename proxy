@@ -76,7 +76,11 @@ validate_env() {
     echo "NOTICE: API_KEY is not set; create one from the dashboard before using /api or /mcp."
   fi
   if [ -z "${SLACK_BOT_TOKEN:-}" ] && { [ -z "${SLACK_COOKIE:-}" ] || [ -z "${SLACK_TOKEN:-}" ]; }; then
-    echo "NOTICE: Slack is not configured; starting in first-run mode for dashboard setup."
+    if [ -s data/secrets.enc ]; then
+      echo "NOTICE: Using dashboard-managed encrypted Slack credentials."
+    else
+      echo "NOTICE: Slack is not configured; starting in first-run mode for dashboard setup."
+    fi
   fi
 }
 

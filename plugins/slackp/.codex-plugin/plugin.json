@@ -1,0 +1,18 @@
+{
+  "name": "slackp",
+  "version": "0.1.0",
+  "description": "Read and safely act on a private Slack workspace through the slackp CLI.",
+  "author": {
+    "name": "mahsanamin"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Slackp",
+    "shortDescription": "Private Slack operations through slackp.",
+    "longDescription": "Teaches Codex how to query, summarize, search, and—with explicit approval—write to a Tailscale-accessible Slack Personal Proxy using the slackp CLI.",
+    "developerName": "mahsanamin",
+    "category": "Productivity",
+    "capabilities": ["Slack search", "mentions", "threads", "messages"],
+    "defaultPrompt": "Use slackp to find the relevant Slack context and help me act on it safely."
+  }
+}
