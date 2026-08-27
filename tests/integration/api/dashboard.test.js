@@ -70,6 +70,23 @@ describe('Dashboard API', () => {
     expect(res.body.error.code).toBe('DASHBOARD_UNAUTHENTICATED');
   });
 
+  test('a valid CLI API key cannot modify the DM allowlist', async () => {
+    const { key, meta } = configStore.createKey('cli-boundary-test');
+    const before = configStore.dmAllowlistEntries();
+    try {
+      const res = await request(app)
+        .post('/dashboard/api/dm-allowlist')
+        .set('X-API-Key', key)
+        .send({ entry: '@unauthorized-user' });
+
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('DASHBOARD_UNAUTHENTICATED');
+      expect(configStore.dmAllowlistEntries()).toEqual(before);
+    } finally {
+      configStore.revokeKey(meta.id);
+    }
+  });
+
   test('login rejects a bad password', async () => {
     const res = await request(app).post('/dashboard/login').send({ user: 'admin', password: 'wrong' });
     expect(res.status).toBe(401);
