@@ -64,12 +64,19 @@ CLI requires interactive confirmation or `--yes`.
 slackp send C01234567 'Hello'
 slackp send @alice 'Hello in a DM'
 slackp send U01234567 'Hello in a DM'
+slackp send @new.person 'Can we talk?' --request-approval
+slackp approval REQUEST_ID
 slackp send C01234567 'Thread reply' --thread 1700000000.123456
 slackp delete C01234567 1700000000.123456
 ```
 
 Agents should use `--yes` only after the user has authorized the exact Slack write.
 For multiline or shell-sensitive text, use `--text-stdin`.
+
+If a person is not permanently allowlisted, add `--request-approval`. Nothing is sent
+until the owner reviews the exact recipient and message in **Dashboard → Approvals**.
+The owner can send once, allow that API key temporarily, always allow the person, or
+reject the request. The CLI cannot approve its own request.
 
 ## Codex plugin
 

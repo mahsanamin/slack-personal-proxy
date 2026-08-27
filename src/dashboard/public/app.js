@@ -31,6 +31,14 @@ function timeAgo(iso) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago';
   return Math.floor(s / 86400) + 'd ago';
 }
+function timeUntil(iso) {
+  const ms = Date.parse(iso) - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 'now';
+  const minutes = Math.ceil(ms / 60000);
+  if (minutes < 60) return 'in ' + minutes + ' min';
+  const hours = Math.ceil(minutes / 60);
+  return hours < 24 ? 'in ' + hours + ' hr' : 'in ' + Math.ceil(hours / 24) + ' days';
+}
 
 function copyCommandBox(command, rows) {
   const field = el('textarea', {
@@ -80,7 +88,7 @@ async function api(path, opts) {
 }
 
 // ---- boot ----
-const VALID_TABS = ['overview', 'keys', 'dm', 'setup', 'security'];
+const VALID_TABS = ['overview', 'keys', 'dm', 'approvals', 'setup', 'security'];
 let STATE = { tab: 'overview', status: null };
 
 function tabFromHash() {
@@ -171,6 +179,7 @@ const TABS = [
   ['overview', 'Overview'],
   ['keys', 'API Keys'],
   ['dm', 'DM Allowlist'],
+  ['approvals', 'Approvals'],
   ['setup', 'Slack Setup'],
   ['security', 'Security'],
 ];
@@ -220,7 +229,7 @@ function renderMain() {
   app().appendChild(tabs);
   app().appendChild(content);
 
-  const view = { overview: viewOverview, keys: viewKeys, dm: viewDm, setup: viewSetup, security: viewSecurity }[STATE.tab];
+  const view = { overview: viewOverview, keys: viewKeys, dm: viewDm, approvals: viewApprovals, setup: viewSetup, security: viewSecurity }[STATE.tab];
   view(content);
 }
 
@@ -459,6 +468,82 @@ function dmRow(u) {
   ]);
 }
 
+// ---- Owner-approved DMs ----
+async function viewApprovals(root) {
+  try {
+    const d = await api('/api/dm-approvals');
+    clear(root);
+    const pending = d.requests.filter((r) => r.status === 'pending');
+    const recent = d.requests.filter((r) => r.status !== 'pending').slice(0, 20);
+    root.appendChild(el('div', { class: 'grid' }, [
+      !d.enabled ? el('div', { class: 'notice warn', text: 'Approvals are not operational. Enable write operations and DM approvals, and configure DASHBOARD_MASTER_KEY.' }) : null,
+      el('div', { class: 'notice' }, [
+        el('strong', { text: 'You stay in control. ' }),
+        'An agent can request a specific message, but only this dashboard can send or approve it. ',
+        'The CLI cannot approve itself or edit the permanent allowlist.',
+      ]),
+      el('div', { class: 'card' }, [
+        el('h2', {}, ['Waiting for you', el('span', { class: 'count', text: String(pending.length) })]),
+        el('p', { class: 'muted', text: 'Review the exact recipient and message. “Send once” is the safest choice.' }),
+        pending.length
+          ? el('div', {}, pending.map((r) => approvalRow(r, d.temporaryGrantMinutes)))
+          : el('div', { class: 'empty', text: 'No messages are waiting for approval.' }),
+      ]),
+      el('div', { class: 'card' }, [
+        el('h2', {}, ['Temporary access', el('span', { class: 'count', text: String(d.grants.length) })]),
+        d.grants.length
+          ? el('div', {}, d.grants.map((g) => el('div', { class: 'item' }, [
+              el('strong', { text: g.name || g.userId }),
+              el('div', { class: 'meta' }, [
+                el('span', { text: 'machine: ' + (g.apiKeyLabel || '?') }),
+                el('span', { text: 'expires ' + timeUntil(g.expiresAt) }),
+              ]),
+            ])))
+          : el('div', { class: 'empty', text: 'No machine has temporary DM access.' }),
+      ]),
+      recent.length ? el('div', { class: 'card' }, [
+        el('h2', { text: 'Recent decisions' }),
+        el('div', {}, recent.map((r) => el('div', { class: 'item' }, [
+          el('div', {}, [el('strong', { text: r.name || r.target }), ' ', el('span', { class: 'badge muted', text: r.decision || r.status })]),
+          el('div', { class: 'meta' }, [el('span', { text: r.apiKeyLabel || '?' }), el('span', { text: timeAgo(r.resolvedAt || r.expiresAt) })]),
+        ]))),
+      ]) : null,
+    ]));
+  } catch (err) {
+    clear(root);
+    root.appendChild(el('div', { class: 'notice err', text: err.message }));
+  }
+}
+
+function approvalRow(r, temporaryMinutes) {
+  const decide = async (decision, label) => {
+    if (!confirm(label + ' for @' + (r.name || r.target) + '?\n\n' + r.text)) return;
+    await api('/api/dm-approvals/' + r.id + '/decision', {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
+    });
+    viewApprovals(document.querySelector('.content'));
+  };
+  return el('div', { class: 'approval item' }, [
+    el('div', { class: 'row', style: 'justify-content:space-between' }, [
+      el('strong', { text: '@' + (r.name || r.target) }),
+      el('span', { class: 'badge amber', text: 'waiting' }),
+    ]),
+    el('div', { class: 'meta' }, [
+      el('span', { text: 'machine: ' + (r.apiKeyLabel || '?') }),
+      el('span', { text: 'requested ' + timeAgo(r.createdAt) }),
+      el('span', { text: 'expires ' + timeUntil(r.expiresAt) }),
+    ]),
+    el('div', { class: 'approval-message', text: r.text }),
+    el('div', { class: 'actions' }, [
+      el('button', { text: 'Send once', onclick: () => decide('send_once', 'Send this exact message once') }),
+      el('button', { class: 'secondary', text: 'Send + allow ' + temporaryMinutes + ' min', onclick: () => decide('allow_temporarily', 'Send now and allow this machine for ' + temporaryMinutes + ' minutes') }),
+      el('button', { class: 'secondary', text: 'Always allow', onclick: () => decide('always_allow', 'Send now and permanently allow this person') }),
+      el('button', { class: 'danger', text: 'Reject', onclick: () => decide('reject', 'Reject this request') }),
+    ]),
+  ]);
+}
+
 // ---- Slack Setup ----
 async function viewSetup(root) {
   clear(root);
@@ -596,6 +681,9 @@ async function viewSecurity(root) {
         statRow('Master key (token encryption)', sec.masterKeySet ? 'set' : 'MISSING', sec.masterKeySet ? 'green' : 'red'),
         statRow('API keys (active / total)', `${sec.apiKeys ? sec.apiKeys.active : 0} / ${sec.apiKeys ? sec.apiKeys.total : 0}`, 'muted'),
         statRow('DM allowlist size', String(sec.dmAllowlistCount || 0), 'muted'),
+        statRow('Write operations', sec.writeOpsEnabled ? 'enabled' : 'disabled', sec.writeOpsEnabled ? 'green' : 'muted'),
+        statRow('DM approvals', sec.dmApprovalsEnabled ? 'enabled' : 'disabled', sec.dmApprovalsEnabled ? 'green' : 'muted'),
+        statRow('Pending approvals', String(sec.pendingDmApprovals || 0), sec.pendingDmApprovals ? 'amber' : 'muted'),
       ]),
     ]));
   } catch (err) { clear(root); root.appendChild(el('div', { class: 'notice err', text: err.message })); }

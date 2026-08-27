@@ -1,6 +1,7 @@
 const config = require('../config');
 const logger = require('../utils/logger');
 const { CACHE_PREFIXES, ERROR_CODES } = require('../utils/constants');
+const configStore = require('./configStore');
 
 class MessageService {
   constructor(slackClient, cacheService, paginationService, whitelistService, persistentCacheService = null) {
@@ -448,7 +449,7 @@ class MessageService {
     return await this.slack.deleteMessage(channelId, messageTs);
   }
 
-  async sendMessage(channelId, text, threadTs = null) {
+  async sendMessage(channelId, text, threadTs = null, apiKeyId = null) {
     const isDm = channelId.startsWith('D');
     if (isDm) {
       const userId = await this.whitelist.resolveUserIdFromDmChannel(channelId);
@@ -457,7 +458,7 @@ class MessageService {
         throw err;
       }
       const dmCheck = this.whitelist.canSendDmToUser(userId);
-      if (!dmCheck.allowed) {
+      if (!dmCheck.allowed && !configStore.hasTemporaryDmGrant(apiKeyId, userId)) {
         throw dmCheck.error;
       }
     } else {
@@ -479,15 +480,15 @@ class MessageService {
     };
   }
 
-  async sendDirectMessage(target, text, threadTs = null) {
+  async sendDirectMessage(target, text, threadTs = null, apiKeyId = null) {
     const normalized = String(target || '').trim().replace(/^@/, '');
-    const userId = this.whitelist.resolveUserId(normalized);
+    const userId = await this.whitelist.resolveUserTarget(normalized);
     if (!userId) {
       throw { ...ERROR_CODES.USER_NOT_FOUND, details: { user: target } };
     }
 
     const dmCheck = this.whitelist.canSendDmToUser(userId);
-    if (!dmCheck.allowed) {
+    if (!dmCheck.allowed && !configStore.hasTemporaryDmGrant(apiKeyId, userId)) {
       throw dmCheck.error;
     }
 
@@ -496,6 +497,24 @@ class MessageService {
       throw { ...ERROR_CODES.USER_NOT_FOUND, details: { user: target } };
     }
     logger.info(`Sending direct message to ${normalized} (${channel.id})`);
+    const result = await this.slack.postMessage(channel.id, text, threadTs);
+    return {
+      ok: result.ok,
+      channel: result.channel,
+      ts: result.ts,
+      message: result.message,
+    };
+  }
+
+  async sendApprovedDirectMessage(userId, text, threadTs = null) {
+    if (!config.enableWriteOps) {
+      throw { ...ERROR_CODES.WRITE_OPS_DISABLED };
+    }
+    const channel = await this.slack.openDmChannel(userId);
+    if (!channel || !channel.id) {
+      throw { ...ERROR_CODES.USER_NOT_FOUND, details: { user: userId } };
+    }
+    logger.info(`Sending owner-approved direct message to ${userId} (${channel.id})`);
     const result = await this.slack.postMessage(channel.id, text, threadTs);
     return {
       ok: result.ok,

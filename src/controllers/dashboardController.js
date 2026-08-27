@@ -102,6 +102,9 @@ async function status(req, res, next) {
         masterKeySet: configStore.hasMasterKey(),
         apiKeys: { total: configStore.listKeys().length, active: configStore.listKeys().filter(k => !k.revokedAt).length },
         dmAllowlistCount: configStore.dmAllowlistEntries().length,
+        writeOpsEnabled: Boolean(config.enableWriteOps),
+        dmApprovalsEnabled: Boolean(config.enableWriteOps && config.dmApprovals && config.dmApprovals.enabled && configStore.hasMasterKey()),
+        pendingDmApprovals: configStore.listDmApprovals({ includeResolved: false }).length,
       },
     }));
   } catch (err) {
@@ -278,6 +281,73 @@ function removeDmUser(req, res) {
   res.json(formatSuccessResponse({ removed: true }));
 }
 
+// --- Owner-approved one-time / temporary DMs ---
+
+function listDmApprovals(req, res) {
+  res.json(formatSuccessResponse({
+    enabled: Boolean(config.enableWriteOps && config.dmApprovals && config.dmApprovals.enabled && configStore.hasMasterKey()),
+    requests: configStore.listDmApprovals({ includeResolved: true }).slice(0, 100),
+    grants: configStore.listTemporaryDmGrants(),
+    temporaryGrantMinutes: (config.dmApprovals && config.dmApprovals.temporaryGrantMin) || 15,
+  }));
+}
+
+async function decideDmApproval(req, res, next) {
+  if (!config.enableWriteOps && req.body && req.body.decision !== 'reject') {
+    const err = { code: 'WRITE_OPS_DISABLED', status: 403, message: 'Write operations are disabled.' };
+    return res.status(err.status).json(formatErrorResponse(err));
+  }
+  const decision = req.body && req.body.decision;
+  if (!['send_once', 'allow_temporarily', 'always_allow', 'reject'].includes(decision)) {
+    return res.status(ERR.BAD_REQUEST.status).json(formatErrorResponse(ERR.BAD_REQUEST, { field: 'decision' }));
+  }
+
+  const approval = configStore.claimDmApproval(req.params.id);
+  if (!approval) {
+    const err = { code: 'APPROVAL_NOT_PENDING', status: 409, message: 'This request is expired, resolved, or its API key was revoked.' };
+    return res.status(err.status).json(formatErrorResponse(err));
+  }
+
+  try {
+    if (decision === 'reject') {
+      return res.json(formatSuccessResponse({
+        approval: configStore.completeDmApproval(approval.id, decision),
+      }));
+    }
+
+    // The dashboard sends the exact reviewed message. No reusable bypass token is
+    // returned to the CLI, so "Send once" truly means once.
+    const result = await req.services.messageService.sendApprovedDirectMessage(
+      approval.userId,
+      approval.text,
+      approval.threadTs || null
+    );
+
+    let grant = null;
+    let allowedUser = null;
+    if (decision === 'allow_temporarily') {
+      grant = configStore.addTemporaryDmGrant({
+        apiKeyId: approval.apiKeyId,
+        apiKeyLabel: approval.apiKeyLabel,
+        userId: approval.userId,
+        name: approval.name,
+      });
+    } else if (decision === 'always_allow') {
+      allowedUser = configStore.addDmUser({
+        entry: String(approval.target).replace(/^@/, ''),
+        userId: approval.userId,
+        name: approval.name,
+      });
+    }
+
+    const completed = configStore.completeDmApproval(approval.id, decision, result);
+    return res.json(formatSuccessResponse({ approval: completed, sent: result, grant, allowedUser }));
+  } catch (err) {
+    configStore.releaseDmApproval(approval.id);
+    next(err);
+  }
+}
+
 // --- Aggregated read view ---
 //
 // Stale-while-revalidate caching. The four panels are slow Slack aggregations that
@@ -351,5 +421,6 @@ module.exports = {
   testSlack, saveSlack,
   listKeys, createKey, revokeKey,
   listDmUsers, addDmUser, removeDmUser,
+  listDmApprovals, decideDmApproval,
   summary,
 };

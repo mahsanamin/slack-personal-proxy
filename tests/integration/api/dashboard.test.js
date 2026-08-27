@@ -12,12 +12,16 @@ process.env.DASHBOARD_USER = 'admin';
 process.env.DASHBOARD_PASSWORD_HASH = hashPassword('s3cret-pass');
 process.env.DASHBOARD_MASTER_KEY = 'test-master-key-please-change-000';
 process.env.ENABLE_DASHBOARD = 'true';
+process.env.ENABLE_WRITE_OPS = 'true';
 
 const configStore = require('../../../src/services/configStore');
 const dashboardRoutes = require('../../../src/routes/dashboard');
+const authMiddleware = require('../../../src/middleware/auth');
+const messageRoutes = require('../../../src/routes/messages');
+let services;
 
 function buildApp() {
-  const services = {
+  services = {
     slackClient: {
       authTest: async () => ({ team: 'TestTeam', user: 'me', user_id: 'U1', team_id: 'T1' }),
       testCredentials: async (c) => {
@@ -34,12 +38,23 @@ function buildApp() {
     activityService: { getThreadsImIn: async () => ({ threads: [] }), getMyThreads: async () => ({ threads: [] }) },
     whitelistService: {
       resolveUserIdFromDmChannel: async (channelId) => channelId === 'D020BE909FV' ? 'U1' : null,
+      resolveUserTarget: async (target) => target.replace(/^@/, '') === 'new.person' ? 'UNEW' : 'U1',
+      userIdToName: new Map([['UNEW', 'new.person'], ['U1', 'someuser']]),
+    },
+    messageService: {
+      sendApprovedDirectMessage: jest.fn(async () => ({
+        ok: true,
+        channel: 'DNEW',
+        ts: '1700000000.123456',
+        message: { text: 'approved message' },
+      })),
     },
   };
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => { req.services = services; next(); });
   app.use('/dashboard', dashboardRoutes);
+  app.use('/api/messages', authMiddleware, messageRoutes);
   return app;
 }
 
@@ -84,6 +99,33 @@ describe('Dashboard API', () => {
       expect(configStore.dmAllowlistEntries()).toEqual(before);
     } finally {
       configStore.revokeKey(meta.id);
+    }
+  });
+
+  test('a CLI key can request a DM but another CLI key cannot read that request', async () => {
+    const first = configStore.createKey('requesting-machine');
+    const second = configStore.createKey('different-machine');
+    try {
+      const requested = await request(app)
+        .post('/api/messages/dm/request')
+        .set('X-API-Key', first.key)
+        .send({ target: '@new.person', text: 'owner must review this' });
+      expect(requested.status).toBe(202);
+      const id = requested.body.data.approval.id;
+
+      const own = await request(app)
+        .get('/api/messages/dm/requests/' + id)
+        .set('X-API-Key', first.key);
+      expect(own.status).toBe(200);
+      expect(own.body.data.approval.status).toBe('pending');
+
+      const other = await request(app)
+        .get('/api/messages/dm/requests/' + id)
+        .set('X-API-Key', second.key);
+      expect(other.status).toBe(404);
+    } finally {
+      configStore.revokeKey(first.meta.id);
+      configStore.revokeKey(second.meta.id);
     }
   });
 
@@ -168,6 +210,49 @@ describe('Dashboard API', () => {
 
       const del = await agent.delete('/dashboard/api/dm-allowlist/' + rec.id);
       expect(del.status).toBe(200);
+    });
+
+    test('DM approval: dashboard sends the exact request once and cannot replay it', async () => {
+      const { meta } = configStore.createKey('approval-machine');
+      const approval = configStore.createDmApproval({
+        target: '@new.person', userId: 'UNEW', name: 'new.person',
+        text: 'approved message', apiKeyId: meta.id, apiKeyLabel: meta.label,
+      });
+      const encrypted = fs.readFileSync(path.join(TMP, 'dm-approvals.enc'), 'utf8');
+      expect(encrypted).not.toContain('approved message');
+
+      const list = await agent.get('/dashboard/api/dm-approvals');
+      expect(list.body.data.requests.find((r) => r.id === approval.id)).toBeTruthy();
+
+      const sent = await agent
+        .post('/dashboard/api/dm-approvals/' + approval.id + '/decision')
+        .send({ decision: 'send_once' });
+      expect(sent.status).toBe(200);
+      expect(services.messageService.sendApprovedDirectMessage).toHaveBeenCalledWith(
+        'UNEW', 'approved message', null
+      );
+
+      const replay = await agent
+        .post('/dashboard/api/dm-approvals/' + approval.id + '/decision')
+        .send({ decision: 'send_once' });
+      expect(replay.status).toBe(409);
+      configStore.revokeKey(meta.id);
+    });
+
+    test('DM approval: temporary access is bound to one API key and revoked with it', async () => {
+      const { meta } = configStore.createKey('temporary-machine');
+      const approval = configStore.createDmApproval({
+        target: '@new.person', userId: 'UNEW', name: 'new.person',
+        text: 'temporary message', apiKeyId: meta.id, apiKeyLabel: meta.label,
+      });
+      const decided = await agent
+        .post('/dashboard/api/dm-approvals/' + approval.id + '/decision')
+        .send({ decision: 'allow_temporarily' });
+      expect(decided.status).toBe(200);
+      expect(configStore.hasTemporaryDmGrant(meta.id, 'UNEW')).toBe(true);
+      expect(configStore.hasTemporaryDmGrant('another-key', 'UNEW')).toBe(false);
+      configStore.revokeKey(meta.id);
+      expect(configStore.hasTemporaryDmGrant(meta.id, 'UNEW')).toBe(false);
     });
 
     test('summary returns all panels, or just one with ?part=', async () => {

@@ -42,6 +42,8 @@ router.delete('/api/keys/:id', c.revokeKey);
 router.get('/api/dm-allowlist', c.listDmUsers);
 router.post('/api/dm-allowlist', c.addDmUser);
 router.delete('/api/dm-allowlist/:id', c.removeDmUser);
+router.get('/api/dm-approvals', c.listDmApprovals);
+router.post('/api/dm-approvals/:id/decision', c.decideDmApproval);
 
 router.get('/api/summary', c.summary);
 

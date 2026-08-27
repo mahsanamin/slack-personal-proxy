@@ -142,6 +142,20 @@ class SlackpTests(unittest.TestCase):
         self.assertEqual(req["path"], "/api/messages/dm/send")
         self.assertEqual(req["body"], {"target": "@ahsan.amin", "text": "hello by name"})
 
+    def test_send_can_request_owner_approval(self):
+        self.connect()
+        result = self.run_cli("send", "@new.person", "please review", "--request-approval", "--yes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        req = Handler.requests[-1]
+        self.assertEqual(req["path"], "/api/messages/dm/request")
+        self.assertEqual(req["body"], {"target": "@new.person", "text": "please review"})
+
+    def test_approval_status_is_scoped_endpoint(self):
+        self.connect()
+        result = self.run_cli("approval", "request-123")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Handler.requests[-1]["path"], "/api/messages/dm/requests/request-123")
+
     def test_bad_key_is_not_saved(self):
         result = self.run_cli("connect", self.url, "--key-stdin", stdin="wrong\n")
         self.assertEqual(result.returncode, 1)

@@ -1,5 +1,12 @@
 const { Router } = require('express');
-const { sendMessage, sendDirectMessage, getMessageHistory, deleteMessage } = require('../controllers/messageController');
+const {
+  sendMessage,
+  sendDirectMessage,
+  requestDirectMessage,
+  getDirectMessageApproval,
+  getMessageHistory,
+  deleteMessage,
+} = require('../controllers/messageController');
 const {
   validateChannelId,
   validateMessageText,
@@ -23,6 +30,17 @@ router.post(
   handleValidationErrors,
   sendDirectMessage
 );
+
+router.post(
+  '/dm/request',
+  validateDmTarget,
+  validateMessageText,
+  validateThreadTs,
+  handleValidationErrors,
+  requestDirectMessage
+);
+
+router.get('/dm/requests/:requestId', getDirectMessageApproval);
 
 /**
  * @swagger

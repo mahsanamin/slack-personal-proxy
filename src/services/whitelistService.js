@@ -200,6 +200,13 @@ class WhitelistService {
     return this.userNameToId.get(nameOrId) || null;
   }
 
+  async resolveUserTarget(nameOrId) {
+    const normalized = String(nameOrId || '').trim().replace(/^@/, '');
+    if (USER_ID_REGEX.test(normalized)) return normalized;
+    if (this.userNameToId.size === 0) await this._resolveUsers();
+    return this.userNameToId.get(normalized) || null;
+  }
+
   getStatus() {
     return {
       enforce: this.enforceWrite || this.enforceDm,

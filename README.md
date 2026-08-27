@@ -1,312 +1,254 @@
 # Slack Personal Proxy
 
-Dockerized REST API proxy for Slack with automatic pagination, thread fetching, caching, and **whitelist-based access control**.
+Give your computers and AI agents useful Slack access without giving them your Slack
+password, browser cookies, or unlimited permission to message people.
 
-Write operations are gated by channel/user whitelists. Reads are unrestricted.
+Slack Personal Proxy runs on your own machine, stays private behind Tailscale, and gives
+each client a separate key you can revoke at any time. Humans use a simple dashboard;
+agents use the `slackp` command and receive predictable JSON.
 
-**Swagger playground** at `/docs` when running.
+## Why this exists
 
-## Setup
+AI agents are good at searching conversations, catching up on mentions, and drafting
+replies. Directly handing an agent your Slack session is not a good security model.
 
-### 1. Get Slack Credentials
+This project puts a small control plane between the agent and Slack:
 
-**Option A: Automated** — launches a browser, you log in, credentials extracted automatically:
+- One Slack connection stays encrypted on your server.
+- Every computer or agent gets its own revocable API key.
+- The server is reachable through your tailnet, not your local LAN or the public internet.
+- Reads are convenient: search, threads, mentions, history, users, and unread activity.
+- Writes stay controlled with channel and DM allowlists.
+- An agent can request an occasional DM, but only you can approve it.
+
+## What you can do
+
 ```bash
-npm run setup    # choose option 2
+slackp unread --count 10
+slackp search 'from:alice in:engineering deployment'
+slackp thread 'https://workspace.slack.com/archives/C.../p...'
+slackp recent C01234567
+slackp send @alice 'The deployment is complete.' --yes
 ```
 
-**Option B: Manual** — grab from DevTools on https://app.slack.com:
+For someone who is not permanently allowed:
 
-| What | Where | Looks like |
-|------|-------|------------|
-| **Cookie** | DevTools → Application → Cookies → `d` | `xoxd-...` |
-| **Token** | Dashboard → Slack Setup → **Copy command**, then run it in Slack DevTools Console | `xoxc-...` |
-
-Exact browser steps:
-
-1. Open `https://app.slack.com/client`, sign in, and open the intended workspace.
-2. Open Developer Tools (`F12` on Windows/Linux, `Cmd+Option+I` on macOS).
-3. In Chrome/Edge, select **Application → Cookies → https://app.slack.com**. In
-   Firefox, select **Storage → Cookies → https://app.slack.com**. Copy the complete
-   value of the cookie named `d`; it should begin with `xoxd-`.
-4. Open the dashboard's **Slack Setup** tab and click **Copy command**. Return to
-   Slack's **Console**, paste the command, and press Enter. The command automatically
-   detects the open workspace, copies its token, and reports `COPIED xoxc token for …`.
-   Return to the dashboard and paste it into `SLACK_TOKEN`.
-5. In the proxy dashboard's **Slack Setup** tab, paste the two values, select
-   **Test connection**, then **Save & connect**.
-
-Treat both values as passwords: they grant access as your signed-in Slack user. If
-you use multiple workspaces and the test identifies the wrong one, open the intended
-workspace immediately before copying, or temporarily sign out of the others.
-
-Then put them in `.env`:
 ```bash
+slackp send @new.person 'Can we schedule 15 minutes?' --request-approval --yes
+```
+
+Nothing is sent yet. You review the exact person and exact message in **Dashboard →
+Approvals**, then choose:
+
+- **Send once** — sends only that reviewed message.
+- **Send + allow 15 min** — sends it and gives only that requesting key temporary access.
+- **Always allow** — sends it and adds the person to the permanent DM allowlist.
+- **Reject** — sends nothing.
+
+The CLI cannot approve itself and cannot edit the DM allowlist.
+
+## Security at a glance
+
+| Control | What it protects |
+|---|---|
+| Tailscale/IP allowlist | Who can reach the server |
+| Dashboard password | Who can manage keys, Slack credentials, people, and approvals |
+| Per-machine API keys | Which clients can use Slack operations |
+| Channel/DM allowlists | Where clients can send |
+| One-time approvals | Occasional messages without permanent access |
+| Encrypted storage | Slack credentials, pending messages, and temporary grants at rest |
+
+API keys never work as dashboard logins. Revoking a key immediately cancels its pending
+requests and temporary DM access.
+
+## Five-minute setup
+
+Requirements: Docker, Docker Compose, and Tailscale on the server. CLI machines only
+need Python 3.9+ and Tailscale.
+
+### 1. Prepare the server
+
+```bash
+git clone https://github.com/mahsanamin/slack-personal-proxy.git
+cd slack-personal-proxy
 cp .env.example .env
-# Set SLACK_COOKIE, SLACK_TOKEN, and API_KEY
+./proxy hash-password
 ```
 
-**Option C: Bot token** — if you have an approved Slack app:
-```bash
-# Just set SLACK_BOT_TOKEN=xoxb-... in .env (no cookie needed)
-```
+Copy the printed password hash into `.env`. Set these values:
 
-### 2. Configure Whitelists
+```dotenv
+DASHBOARD_USER=admin
+DASHBOARD_PASSWORD_HASH=<paste the generated scrypt hash>
+DASHBOARD_MASTER_KEY=<a long random secret; openssl rand -hex 32 can generate one>
 
-**Write whitelist** — gates send/post operations (reads are always unrestricted):
-```bash
-# In .env — comma-separated channel IDs or names
-ALLOWED_WRITE_CHANNELS=C12345,C67890
-# Accepts user IDs (U...), usernames, or DM channel IDs (D...)
-ALLOWED_DM_USERS=D020BE909FV,U12345
+# Bind only to this server's Tailscale address.
+BIND_ADDRESS=<SERVER_TAILSCALE_IP>
+ALLOWED_IPS=100.64.0.0/10
+HOST_PORT=8282
+
+# Required for any send operation. Allowlists and approvals still apply.
 ENABLE_WRITE_OPS=true
 ```
 
-**IP allowlist** — restricts which IPs can reach the proxy at all:
+Keep `.env` private. It is ignored by Git.
+
+### 2. Start it
+
 ```bash
-# Empty (default) = localhost only — most secure
-# 0.0.0.0         = allow everyone (use behind a trusted reverse proxy)
-# Supports single IPs and CIDR ranges, comma-separated
-ALLOWED_IPS=100.64.0.0/10,192.168.64.1,100.91.173.92
+./proxy start
 ```
 
-Loopback (`127.0.0.1`, `::1`) always passes so Docker healthchecks keep working.
+Open `http://SERVER_TAILSCALE_IP:8282/dashboard`. The service binds to the Tailscale IP,
+so the machine's normal LAN IP does not expose it.
 
-### 3. HTTPS (recommended for network access)
+### 3. Connect Slack
 
-In `.env`:
-```bash
-ENABLE_HTTPS=true
-BIND_ADDRESS=0.0.0.0         # expose on network (IP allowlist handles security)
-```
+Sign into the dashboard and open **Slack Setup**. The page gives exact browser steps for
+either:
 
-`./proxy start` auto-generates self-signed certs if missing and fixes permissions.
+- a personal Slack session using your `xoxd` cookie and `xoxc` token; or
+- an approved Slack app using an `xoxb` bot token.
 
-Access via `https://<YOUR_IP>:8282/docs`. Browser will warn about self-signed cert — accept to proceed.
+Select **Test connection**, then **Save & connect**. Credentials entered in the dashboard
+are encrypted with `DASHBOARD_MASTER_KEY` before being written to disk.
 
-### 4. Run
+### 4. Connect another machine or agent
 
-```bash
-./proxy start       # build, start, wait for healthy
-./proxy stop        # stop container
-./proxy restart     # stop + start
-./proxy logs        # tail logs
-./proxy status      # check if running
+Open **Dashboard → API Keys** and follow the three numbered steps shown there:
 
-# Or locally without Docker
-npm install && npm start
-```
+1. Copy the generated `slackp` install command to the other machine.
+2. Create one labeled key for that machine and copy it once.
+3. Run the displayed `slackp connect ...` command and paste the key at the hidden prompt.
 
-### 5. Test
+Verify it:
 
 ```bash
-# HTTP (localhost)
-curl http://localhost:8282/health
-
-# HTTPS (if enabled, -k for self-signed cert)
-curl -sk https://localhost:8282/health
-curl -sk -H "X-API-Key: YOUR_KEY" https://localhost:8282/api/auth/test
-```
-
-## Management Dashboard
-
-A password-protected web console at **`/dashboard`** to run the proxy without editing
-`.env` by hand: view your recent mentions and tagged threads, create & revoke API keys,
-manage the DM allowlist (add more people, applied live), set up Slack tokens securely, and
-check your network-exposure/security status at a glance.
-
-Everything runs through Docker via the `./proxy` script (no host Node needed). Install it
-once as a global command, then use it from anywhere:
-
-```bash
-# 0. (optional, once) install the global command
-./proxy install                 # then use `slack-proxy ...` from any directory
-
-# 1. Create the login hash (runs inside Docker, prints a line for .env)
-slack-proxy hash-password 'your-password'
-
-# 2. Add to .env
-ENABLE_DASHBOARD=true
-DASHBOARD_USER=you
-DASHBOARD_PASSWORD_HASH=scrypt$...         # from step 1
-DASHBOARD_MASTER_KEY=<32+ char passphrase> # encrypts Slack tokens at rest
-
-# 3. Rebuild + restart, then open it (localhost by default; behind the IP allowlist)
-slack-proxy restart
-open http://localhost:8282/dashboard
-```
-
-To pull a new version and restart in one step: `slack-proxy update`.
-
-Notes:
-- **Login is a session cookie**, separate from the `X-API-Key` used by programmatic clients.
-- **Secrets are never viewable**: Slack tokens are AES-256-GCM encrypted in `data/secrets.enc`
-  (master key lives only in the env); API keys are stored as SHA-256 hashes and shown once.
-- **Backward compatible**: the legacy `.env` `API_KEY` and all existing `X-API-Key` calls keep working.
-- Not network-exposed by default (`BIND_ADDRESS=127.0.0.1` + localhost-only allowlist).
-
-## `slackp` CLI
-
-Install the agent-friendly CLI from any machine on the tailnet (Python 3.9+, no
-packages required):
-
-```bash
-sudo mkdir -p /usr/local/bin && sudo curl -fsSL http://100.100.50.30:8282/dashboard/slackp -o /usr/local/bin/slackp && sudo chmod 755 /usr/local/bin/slackp && slackp --help
-```
-
-The same command is available with a **Copy command** button under **Dashboard → API
-Keys**. This system-wide install makes `slackp` directly available from every shell.
-From a repository checkout, use
-`sudo ./slackp install --path /usr/local/bin/slackp` for the same result.
-
-Create a separate key for the machine at **Dashboard → API Keys**, then connect through
-the hidden key prompt:
-
-```bash
-slackp connect http://100.100.50.30:8282
 slackp status
+slackp --help
 ```
 
-Typical commands:
+Create a separate key for every machine or agent. If one is lost or retired, delete only
+that key in the dashboard.
+
+## Everyday commands
+
+### Read Slack
 
 ```bash
 slackp unread --count 10
 slackp mentions --count 20
-slackp search 'from:alice deployment'
-slackp thread 'https://workspace.slack.com/archives/C.../p...'
+slackp threads --count 20
+slackp my-threads --count 20
+slackp search 'from:alice after:2026-08-01 launch'
 slackp channels
-slackp recent C01234567
-slackp send @alice 'Hello in a DM'      # resolves the D-channel automatically
-slackp send C01234567 'Hello'       # confirms before sending
+slackp recent C01234567 --count 5
+slackp history D01234567 --count 50
+slackp users
 ```
 
-Output is JSON by default for reliable LLM use. Named profiles allow multiple servers
-or identities, while dashboard keys allow each machine/agent to be revoked separately.
-See [`docs/cli.md`](docs/cli.md) for all usage and the included Codex plugin.
-
-## API Endpoints
-
-All `/api/*` endpoints require `X-API-Key` header. `API_KEY` is set in your `.env`.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check (no auth) |
-| GET | `/api/auth/test` | Test auth |
-| GET | `/api/channels` | List whitelisted channels |
-| GET | `/api/channels/:id/info` | Channel details (whitelisted only) |
-| GET | `/api/channels/:id/recent-messages?count=5&includeThreads=true` | Messages with threads |
-| GET | `/api/conversations/:channelId/thread/:threadTs` | Complete thread |
-| GET | `/api/conversations/:channelId/context?messageTs=...&before=5&after=5` | Context around a message |
-| GET | `/api/users` | List users |
-| GET | `/api/users/:id/profile` | User profile |
-| GET | `/api/users/by-email?email=...` | Look up user by email, get DM channel ID |
-| GET | `/api/search/messages?query=...&count=10` | Search (whitelisted channels only) |
-| GET | `/api/mentions/all?count=20&includeThreads=true` | All your mentions |
-| GET | `/api/mentions/threads?count=20` | Threads where you're mentioned |
-| GET | `/api/mentions/by-channel/:channelId?count=20` | Mentions in a specific channel |
-| GET | `/api/activity/threads-im-in?count=20` | Threads you participated in |
-| GET | `/api/activity/my-threads?count=20&includeReplies=true` | Threads you started |
-| POST | `/api/messages/:channelId/send` | Send message (write-whitelisted only) |
-| POST | `/api/messages/dm/send` | Send DM by allowlisted `@username` or user ID |
-| GET | `/api/admin/whitelist-status` | Whitelist config |
-
-## Environment Variables
-
-See [`.env.example`](.env.example) for all options. Key ones:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SLACK_COOKIE` + `SLACK_TOKEN` | — | Cookie auth (`xoxd-` + `xoxc-`) * |
-| `SLACK_BOT_TOKEN` | — | Or bot auth (`xoxb-`) * |
-| `API_KEY` | — | Proxy API key (required) |
-| `ALLOWED_WRITE_CHANNELS` | empty | Comma-separated write whitelist (empty = all writes allowed) |
-| `ALLOWED_DM_USERS` | empty | DM whitelist: user IDs (`U...`), names, or DM channel IDs (`D...`) |
-| `ALLOWED_IPS` | empty | IP allowlist — empty = localhost only, `0.0.0.0` = everyone |
-| `ENABLE_WRITE_OPS` | `false` | Must be `true` to send messages |
-| `ENABLE_HTTPS` | `false` | Enable HTTPS with self-signed cert |
-| `BIND_ADDRESS` | `127.0.0.1` | `0.0.0.0` to expose on network |
-| `HOST_PORT` | `8282` | Port on the host machine |
-| `ENABLE_MCP` | `false` | Enable MCP server at `/mcp` for LLM tool use |
-| `ENABLE_SWAGGER` | `true` | Set `false` to disable `/docs` |
-| `ENABLE_CACHING` | `true` | Toggle response caching |
-
-\* One of cookie pair or bot token required.
-
-## MCP Server (LLM Tool Use)
-
-The proxy includes an optional [Model Context Protocol](https://modelcontextprotocol.io/) server that lets LLM clients (Claude Code, Cursor, etc.) call Slack tools directly — no extra process, same container, same security stack.
-
-### Enable
+### Send safely
 
 ```bash
-# In .env
-ENABLE_MCP=true
+# An allowlisted person; @username and U... user IDs both work.
+slackp send @alice 'Hello' --yes
+
+# A channel allowed by ALLOWED_WRITE_CHANNELS.
+slackp send C01234567 'Deployment finished' --yes
+
+# A reply in a thread.
+slackp send C01234567 'Fixed in production' --thread 1700000000.123456 --yes
+
+# Ask the owner to review an occasional DM.
+slackp send @new.person 'Can we talk?' --request-approval --yes
+
+# Check the request returned by the previous command.
+slackp approval REQUEST_ID
 ```
 
-Then `./proxy restart`. The MCP endpoint is at `POST /mcp`, protected by the same auth (`X-API-Key`), IP allowlist, and rate limits as `/api/*`.
+Without `--yes`, `slackp` asks for confirmation interactively. Agents should use `--yes`
+only when the user has authorized the exact write.
 
-### Tools
+## Dashboard guide
 
-| Tool | Description |
-|------|-------------|
-| `slack_unread` | Full catch-up: mentions + threads you're in + threads you started, deduplicated |
-| `slack_summary` | Lighter overview: mentions + threads with new activity |
-| `slack_get_mentions` | All your @mentions with optional thread context |
-| `slack_get_thread_activity` | Threads you're in with new replies since your last message |
-| `slack_send_message` | Send/reply to whitelisted channels (requires `ENABLE_WRITE_OPS=true`) |
-| `slack_search` | Full-text search with Slack query syntax (`from:`, `in:`, `has:`, etc.) |
-| `slack_get_thread` | Get complete thread — parent message + all replies |
+- **Overview** — recent mentions and active threads.
+- **API Keys** — install the CLI and create/revoke one key per client.
+- **DM Allowlist** — permanently control who can receive direct messages.
+- **Approvals** — review occasional DM requests and temporary access.
+- **Slack Setup** — connect or replace Slack credentials.
+- **Security** — confirm network exposure and enabled services.
 
-### Client Configuration
+## Configuration that matters
 
-**Claude Code** — add to `~/.claude/.mcp.json`:
-```json
-{
-  "mcpServers": {
-    "slack-proxy": {
-      "type": "url",
-      "url": "https://YOUR_IP:8282/mcp",
-      "headers": { "X-API-Key": "YOUR_KEY" }
-    }
-  }
-}
-```
+All options are documented in [`.env.example`](.env.example). These are the important
+ones:
 
-**Other MCP clients** — point any Streamable HTTP client at `POST https://YOUR_IP:8282/mcp` with the `X-API-Key` header. The server is stateless (no session management needed).
+| Variable | Default | Meaning |
+|---|---:|---|
+| `BIND_ADDRESS` | `127.0.0.1` | Use the server's Tailscale IP for tailnet-only access |
+| `ALLOWED_IPS` | localhost | Use `100.64.0.0/10` to accept tailnet clients |
+| `HOST_PORT` | `8282` | Port exposed on the server |
+| `ENABLE_WRITE_OPS` | `false` | Master switch for sending/deleting |
+| `ALLOWED_WRITE_CHANNELS` | empty | Allowed channel IDs; empty means every channel |
+| `ALLOWED_DM_USERS` | empty | Optional `.env` seed; dashboard entries are easier |
+| `ENABLE_DM_APPROVALS` | `true` | Allow agents to queue exact DMs for owner review |
+| `DM_APPROVAL_TTL_MINUTES` | `60` | How long a pending request waits |
+| `DM_TEMP_GRANT_MINUTES` | `15` | Default temporary DM access window |
+| `ENABLE_MCP` | `false` | Enable the optional MCP endpoint |
 
-### Verify
+## Codex plugin
+
+The included plugin teaches Codex what `slackp` means, which read command to choose, and
+when to request owner approval instead of asking for broader access.
+
+From this repository checkout:
 
 ```bash
-# Should return tool list
-curl -sk -X POST https://localhost:8282/mcp \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "X-API-Key: YOUR_KEY" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+codex plugin marketplace add .
+codex plugin add slackp@slackp-project
 ```
 
-## Architecture
+Start a new Codex conversation after installation. See [the CLI guide](docs/cli.md) for
+profiles, JSON behavior, and the complete command list.
 
+## Operations
+
+```bash
+./proxy start
+./proxy stop
+./proxy restart
+./proxy logs
+./proxy status
+./proxy update       # pull, rebuild, and restart
+./proxy install      # install the slack-proxy helper command
 ```
-Routes → Controllers → Services → SlackClient → Slack API
-                          ↕
-                  Cache / Pagination / Whitelist
-```
+
+The dashboard is the normal interface. REST documentation is available at `/docs` when
+`ENABLE_SWAGGER=true`; the concise endpoint list is in [docs/endpoints.md](docs/endpoints.md).
+
+## Optional MCP access
+
+Set `ENABLE_MCP=true` and restart to expose `POST /mcp` through the same Tailscale gate,
+API-key authentication, rate limits, and write controls. The `slackp` CLI is usually the
+simpler choice because any shell-capable agent can use it without MCP configuration.
 
 ## Testing
 
 ```bash
-npm test                  # all tests
-npm run test:unit         # unit only
-npm run test:integration  # integration only
+npm test
+python3 -m unittest discover -s tests/cli -p 'test_*.py'
 ```
 
 ## Troubleshooting
 
-- **401**: Check `API_KEY` in `.env` matches your `X-API-Key` header
-- **403 IP_NOT_ALLOWED**: Your IP isn't in `ALLOWED_IPS` (empty = localhost only)
-- **403 WRITE_CHANNEL_NOT_WHITELISTED**: Channel is not in `ALLOWED_WRITE_CHANNELS`
-- **403 WRITE_OPS_DISABLED**: Set `ENABLE_WRITE_OPS=true` in `.env`
-- **Swagger not loading externally**: Make sure `ENABLE_HTTPS=true` and access via `https://`
-- **Slack auth errors**: Cookies expire — re-run `npm run setup` to refresh
-- **Empty results**: Bot token may lack required scopes (`channels:read`, `search:read`, etc.)
+- **Dashboard does not open:** confirm Tailscale is connected and use the server's
+  Tailscale IP, not its LAN IP.
+- **`WRITE_OPS_DISABLED`:** set `ENABLE_WRITE_OPS=true`, then restart.
+- **`USER_NOT_WHITELISTED`:** add the person in Dashboard → DM Allowlist or use
+  `--request-approval` for the exact message.
+- **`not_allowed_token_type`:** some Slack methods do not accept personal session tokens;
+  one failed method no longer blocks later supported commands.
+- **Slack login expired:** replace the cookie/token pair in Dashboard → Slack Setup.
+
+This is a personal, self-hosted bridge. Use it only with accounts and workspaces you are
+authorized to access, and follow your organization's Slack and security policies.

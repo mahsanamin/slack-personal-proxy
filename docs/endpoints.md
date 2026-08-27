@@ -17,6 +17,8 @@ All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public
 |--------|------|-------------|------|
 | POST | `/api/messages/:channelId/send` | Send message (write-gated) | `{ "text": "...", "thread_ts": "..." }` |
 | POST | `/api/messages/dm/send` | Send DM by allowlisted `@username` or user ID | `{ "target": "@alice", "text": "...", "thread_ts": "..." }` |
+| POST | `/api/messages/dm/request` | Queue an exact DM for owner approval | `{ "target": "@alice", "text": "..." }` |
+| GET | `/api/messages/dm/requests/:requestId` | Check this API key's own approval request | — |
 | GET | `/api/messages/:channelId/history` | Message history from channel/DM | `?count=100&oldest=...&latest=...&verbose=false` |
 | DELETE | `/api/messages/:channelId/:messageTs` | Delete a message (write-gated) | — |
 
@@ -93,6 +95,8 @@ All routes are still behind the global IP allowlist.
 | GET | `/dashboard/slackp` | none | Download the dependency-free `slackp` CLI (still IP-allowlisted) |
 | POST | `/dashboard/api/dm-allowlist` | session | Add a user (by @name / email / U-id / D-id), hot-reload |
 | DELETE | `/dashboard/api/dm-allowlist/:id` | session | Remove a user |
+| GET | `/dashboard/api/dm-approvals` | session | List encrypted DM requests and temporary grants |
+| POST | `/dashboard/api/dm-approvals/:id/decision` | session | Send once, grant temporarily/permanently, or reject |
 | GET | `/dashboard/api/summary` | session | Aggregated mentions + threads for the landing view |
 
 ## System

@@ -28,6 +28,8 @@ Writes require user authorization and CLI confirmation:
 slackp send CHANNEL_ID 'message' --yes
 slackp send @username 'direct message' --yes
 slackp send USER_ID 'direct message' --yes
+slackp send @username 'exact message for owner review' --request-approval --yes
+slackp approval REQUEST_ID
 slackp send CHANNEL_ID 'reply' --thread THREAD_TS --yes
 slackp delete CHANNEL_ID MESSAGE_TS --yes
 ```

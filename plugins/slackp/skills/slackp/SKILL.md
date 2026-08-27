@@ -28,6 +28,8 @@ Sending or deleting changes external Slack state. Draft the exact message and co
 
 For DMs, prefer `slackp send @username 'message' --yes` or `slackp send USER_ID 'message' --yes`; the server resolves the D-channel while enforcing its DM allowlist.
 
+If the requested recipient is not allowlisted, do not ask for broader access. When the user has authorized the exact draft, run `slackp send @username 'message' --request-approval --yes`. Report the returned request ID and explain that nothing is sent until the owner chooses an action in Dashboard → Approvals. Use `slackp approval REQUEST_ID` to check that request. Never imply that creating a request approves or sends it.
+
 For message text with shell-sensitive characters or multiple lines, prefer stdin:
 
 ```bash

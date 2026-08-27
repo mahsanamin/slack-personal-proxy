@@ -20,6 +20,7 @@ const {
  *   - apikeys.json     : API keys as SHA-256 fingerprints + metadata (never the secret)
  *   - secrets.enc      : Slack credentials, AES-256-GCM encrypted with DASHBOARD_MASTER_KEY
  *   - dm-allowlist.json: extra users allowed to receive DMs, on top of the .env seed
+ *   - dm-approvals.enc : encrypted pending messages, decisions, and temporary grants
  *
  * Emits 'slackCredsChanged' and 'dmAllowlistChanged' so the server can hot-reload the
  * Slack client and whitelist service without a restart.
@@ -35,6 +36,7 @@ class ConfigStore extends EventEmitter {
     this.masterKey = '';
     this._keys = [];            // in-memory API key records (source of truth after init)
     this._dmUsers = [];         // in-memory DM-allowlist records
+    this._dmApprovalState = { requests: [], grants: [] };
     this._flushTimer = null;
   }
 
@@ -53,11 +55,14 @@ class ConfigStore extends EventEmitter {
       this._writeJson(this._path('apikeys.json'), this._keys);
     }
     this._dmUsers = this._readJson(this._path('dm-allowlist.json'), []);
+    this._dmApprovalState = this._readApprovalState();
+    this._purgeDmApprovalState();
     this.initialized = true;
 
     logger.info(
       `ConfigStore ready (dir=${this.dataDir}, keys=${this._keys.length}, ` +
-      `dmUsers=${this._dmUsers.length}, secrets=${this.hasStoredSlackCreds() ? 'present' : 'none'}, ` +
+      `dmUsers=${this._dmUsers.length}, pendingApprovals=${this.listDmApprovals().length}, ` +
+      `secrets=${this.hasStoredSlackCreds() ? 'present' : 'none'}, ` +
       `masterKey=${this.masterKey ? 'set' : 'MISSING'})`
     );
   }
@@ -78,6 +83,61 @@ class ConfigStore extends EventEmitter {
 
   _writeJson(file, data) {
     fs.writeFileSync(file, JSON.stringify(data, null, 2), { mode: 0o600 });
+  }
+
+  _readApprovalState() {
+    const file = this._path('dm-approvals.enc');
+    if (!fs.existsSync(file)) return { requests: [], grants: [] };
+    if (!this.masterKey) {
+      logger.warn('ConfigStore: DASHBOARD_MASTER_KEY missing; encrypted DM approvals cannot be loaded');
+      return { requests: [], grants: [] };
+    }
+    try {
+      const parsed = JSON.parse(decrypt(fs.readFileSync(file, 'utf8'), this.masterKey));
+      return {
+        requests: Array.isArray(parsed.requests) ? parsed.requests : [],
+        grants: Array.isArray(parsed.grants) ? parsed.grants : [],
+      };
+    } catch (err) {
+      logger.warn(`ConfigStore: could not read encrypted DM approvals: ${err.message}`);
+      return { requests: [], grants: [] };
+    }
+  }
+
+  _writeApprovalState() {
+    if (!this.masterKey) throw new Error('DASHBOARD_MASTER_KEY is required for DM approvals');
+    const payload = encrypt(JSON.stringify(this._dmApprovalState), this.masterKey);
+    fs.writeFileSync(this._path('dm-approvals.enc'), payload, { mode: 0o600 });
+  }
+
+  _purgeDmApprovalState() {
+    const now = Date.now();
+    let changed = false;
+    for (const request of this._dmApprovalState.requests) {
+      if (request.status === 'pending' && Date.parse(request.expiresAt) <= now) {
+        request.status = 'expired';
+        request.resolvedAt = new Date(now).toISOString();
+        changed = true;
+      } else if (request.status === 'pending' && !this.isApiKeyIdActive(request.apiKeyId)) {
+        request.status = 'cancelled';
+        request.decision = 'api_key_revoked';
+        request.resolvedAt = new Date(now).toISOString();
+        changed = true;
+      }
+    }
+    const grants = this._dmApprovalState.grants.filter((g) => Date.parse(g.expiresAt) > now && this.isApiKeyIdActive(g.apiKeyId));
+    if (grants.length !== this._dmApprovalState.grants.length) {
+      this._dmApprovalState.grants = grants;
+      changed = true;
+    }
+    // Keep a small audit trail without allowing the encrypted file to grow forever.
+    if (this._dmApprovalState.requests.length > 300) {
+      const pending = this._dmApprovalState.requests.filter((r) => r.status === 'pending');
+      const resolved = this._dmApprovalState.requests.filter((r) => r.status !== 'pending').slice(-200);
+      this._dmApprovalState.requests = [...pending, ...resolved];
+      changed = true;
+    }
+    if (changed && this.masterKey) this._writeApprovalState();
   }
 
   // ---------------------------------------------------------------------------
@@ -159,6 +219,21 @@ class ConfigStore extends EventEmitter {
     if (idx === -1) return false;
     const [rec] = this._keys.splice(idx, 1);
     this._writeJson(this._path('apikeys.json'), this._keys);
+    const beforeGrants = this._dmApprovalState.grants.length;
+    const now = new Date().toISOString();
+    let requestsChanged = false;
+    for (const request of this._dmApprovalState.requests) {
+      if (request.apiKeyId === id && request.status === 'pending') {
+        request.status = 'cancelled';
+        request.decision = 'api_key_revoked';
+        request.resolvedAt = now;
+        requestsChanged = true;
+      }
+    }
+    this._dmApprovalState.grants = this._dmApprovalState.grants.filter((g) => g.apiKeyId !== id);
+    if (this.masterKey && (requestsChanged || beforeGrants !== this._dmApprovalState.grants.length)) {
+      this._writeApprovalState();
+    }
     logger.info(`API key deleted: ${rec.label} (${rec.prefix})`);
     return true;
   }
@@ -231,6 +306,110 @@ class ConfigStore extends EventEmitter {
     const seed = (config.whitelist && config.whitelist.dmUsers) || [];
     const stored = this._dmUsers.map((u) => u.userId || u.entry).filter(Boolean);
     return Array.from(new Set([...seed, ...stored]));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Owner-approved DMs (encrypted at rest)
+  // ---------------------------------------------------------------------------
+
+  isApiKeyIdActive(id) {
+    if (id === 'legacy-env') return Boolean(config.apiKey);
+    return this._keys.some((k) => k.id === id && !k.revokedAt);
+  }
+
+  createDmApproval({ target, userId, name, text, threadTs = null, apiKeyId, apiKeyLabel }) {
+    if (!this.masterKey) throw new Error('DASHBOARD_MASTER_KEY is required for DM approvals');
+    this._purgeDmApprovalState();
+    const settings = config.dmApprovals || {};
+    const maxPending = settings.maxPending || 100;
+    const keyPending = this._dmApprovalState.requests.filter((r) => r.status === 'pending' && r.apiKeyId === apiKeyId);
+    if (keyPending.length >= maxPending) throw new Error(`Too many pending approval requests (maximum ${maxPending})`);
+    const now = Date.now();
+    const rec = {
+      id: crypto.randomUUID(),
+      status: 'pending',
+      target,
+      userId,
+      name: name || target,
+      text,
+      threadTs,
+      apiKeyId,
+      apiKeyLabel: apiKeyLabel || 'unknown',
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + (settings.requestTtlMin || 60) * 60000).toISOString(),
+    };
+    this._dmApprovalState.requests.push(rec);
+    this._writeApprovalState();
+    logger.info(`DM approval requested for ${rec.name} by key ${rec.apiKeyLabel} (${rec.id})`);
+    return { ...rec };
+  }
+
+  listDmApprovals({ includeResolved = true, apiKeyId = null } = {}) {
+    this._purgeDmApprovalState();
+    return this._dmApprovalState.requests
+      .filter((r) => (includeResolved || r.status === 'pending') && (!apiKeyId || r.apiKeyId === apiKeyId))
+      .map((r) => ({ ...r }))
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }
+
+  getDmApproval(id) {
+    this._purgeDmApprovalState();
+    const rec = this._dmApprovalState.requests.find((r) => r.id === id);
+    return rec ? { ...rec } : null;
+  }
+
+  claimDmApproval(id) {
+    this._purgeDmApprovalState();
+    const rec = this._dmApprovalState.requests.find((r) => r.id === id);
+    if (!rec || rec.status !== 'pending' || !this.isApiKeyIdActive(rec.apiKeyId)) return null;
+    rec.status = 'processing';
+    this._writeApprovalState();
+    return { ...rec };
+  }
+
+  releaseDmApproval(id) {
+    const rec = this._dmApprovalState.requests.find((r) => r.id === id);
+    if (!rec || rec.status !== 'processing') return false;
+    rec.status = 'pending';
+    this._writeApprovalState();
+    return true;
+  }
+
+  completeDmApproval(id, decision, result = {}) {
+    const rec = this._dmApprovalState.requests.find((r) => r.id === id);
+    if (!rec || !['pending', 'processing'].includes(rec.status)) return null;
+    rec.status = decision === 'reject' ? 'rejected' : 'approved';
+    rec.decision = decision;
+    rec.resolvedAt = new Date().toISOString();
+    if (result.channel) rec.channel = result.channel;
+    if (result.ts) rec.ts = result.ts;
+    this._writeApprovalState();
+    return { ...rec };
+  }
+
+  addTemporaryDmGrant({ apiKeyId, apiKeyLabel, userId, name, minutes = null }) {
+    const settings = config.dmApprovals || {};
+    const duration = Math.max(1, Math.min(Number(minutes) || settings.temporaryGrantMin || 15, 1440));
+    this._dmApprovalState.grants = this._dmApprovalState.grants.filter((g) => !(g.apiKeyId === apiKeyId && g.userId === userId));
+    const grant = {
+      id: crypto.randomUUID(), apiKeyId, apiKeyLabel, userId, name,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + duration * 60000).toISOString(),
+    };
+    this._dmApprovalState.grants.push(grant);
+    this._writeApprovalState();
+    return { ...grant };
+  }
+
+  hasTemporaryDmGrant(apiKeyId, userId) {
+    if (!apiKeyId || !userId) return false;
+    this._purgeDmApprovalState();
+    return this._dmApprovalState.grants.some((g) => g.apiKeyId === apiKeyId && g.userId === userId);
+  }
+
+  listTemporaryDmGrants() {
+    this._purgeDmApprovalState();
+    return this._dmApprovalState.grants.map((g) => ({ ...g }));
   }
 }
 

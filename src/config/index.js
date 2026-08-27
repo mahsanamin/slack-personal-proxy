@@ -78,6 +78,15 @@ const config = Object.freeze({
   // Write operations
   enableWriteOps: parseBoolean(process.env.ENABLE_WRITE_OPS, false),
 
+  // Optional owner-approved DMs. Existing allowlist behavior is unchanged; this only
+  // enables explicit, dashboard-reviewed requests from API-key clients.
+  dmApprovals: Object.freeze({
+    enabled: parseBoolean(process.env.ENABLE_DM_APPROVALS, true),
+    requestTtlMin: parseInt_(process.env.DM_APPROVAL_TTL_MINUTES, 60),
+    temporaryGrantMin: parseInt_(process.env.DM_TEMP_GRANT_MINUTES, 15),
+    maxPending: parseInt_(process.env.DM_APPROVAL_MAX_PENDING, 100),
+  }),
+
   // Swagger docs
   enableSwagger: parseBoolean(process.env.ENABLE_SWAGGER, true),
 

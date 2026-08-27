@@ -13,3 +13,7 @@ Slack writes change external state. Do not run `slackp send ... --yes`, `slackp 
 write. Never print, request in chat, or pass Slack/API credentials as command-line
 arguments. When connection is required, direct the user to Dashboard → API Keys and
 the hidden prompt from `slackp connect SERVER_URL`.
+
+When an explicitly authorized DM recipient is not allowlisted, use `slackp send
+@username 'exact draft' --request-approval --yes`. This only queues the exact message;
+the owner must approve it in Dashboard → Approvals before anything is sent.

@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from urllib import error, parse, request
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 DEFAULT_CONFIG = Path(os.environ.get("SLACKP_CONFIG", "~/.config/slackp/config.json")).expanduser()
 
 
@@ -290,17 +290,25 @@ def run_api_command(args, profile):
         return api_call(profile, "GET", "/api/users/%s/profile" % parse.quote(args.user_id, safe=""))
     if command == "user-by-email":
         return api_call(profile, "GET", "/api/users/by-email", {"email": args.email})
+    if command == "approval":
+        return api_call(profile, "GET", "/api/messages/dm/requests/%s" % parse.quote(args.request_id, safe=""))
     if command == "send":
         text = args.text
         if args.text_stdin or text is None:
             text = sys.stdin.read().rstrip("\n")
         if not text:
             raise SlackpError("Message text cannot be empty", "BAD_ARGUMENT")
-        require_confirmation(args, "Send message to %s?" % args.target)
+        action = "Request owner approval for message to %s?" if args.request_approval else "Send message to %s?"
+        require_confirmation(args, action % args.target)
         body = {"text": text}
         if args.thread:
             body["thread_ts"] = args.thread
-        if args.target.startswith("@") or args.target.startswith("U"):
+        if args.request_approval:
+            if not (args.target.startswith("@") or args.target.startswith("U") or args.target.startswith("W")):
+                raise SlackpError("Approval requests require @username or a U/W user ID", "BAD_ARGUMENT")
+            body["target"] = args.target
+            return api_call(profile, "POST", "/api/messages/dm/request", body=body)
+        if args.target.startswith("@") or args.target.startswith("U") or args.target.startswith("W"):
             body["target"] = args.target
             return api_call(profile, "POST", "/api/messages/dm/send", body=body)
         return api_call(profile, "POST", "/api/messages/%s/send" % parse.quote(args.target, safe=""), body=body)
@@ -399,7 +407,8 @@ def build_parser():
     p = sub.add_parser("users", help="List workspace users"); p.add_argument("--include-deleted", action="store_true"); p.add_argument("--include-bots", action="store_true")
     p = sub.add_parser("user", help="Get a user profile"); p.add_argument("user_id")
     p = sub.add_parser("user-by-email", help="Find a user and DM channel"); p.add_argument("email")
-    p = sub.add_parser("send", help="Send to a channel, D-channel, U-user ID, or @username"); p.add_argument("target"); p.add_argument("text", nargs="?"); p.add_argument("--text-stdin", action="store_true"); p.add_argument("--thread"); p.add_argument("--yes", action="store_true")
+    p = sub.add_parser("send", help="Send to a channel/user, or ask the owner to approve a DM"); p.add_argument("target"); p.add_argument("text", nargs="?"); p.add_argument("--text-stdin", action="store_true"); p.add_argument("--thread"); p.add_argument("--request-approval", action="store_true", help="Queue this exact DM for dashboard approval"); p.add_argument("--yes", action="store_true")
+    p = sub.add_parser("approval", help="Check one of this API key's DM approval requests"); p.add_argument("request_id")
     p = sub.add_parser("delete", help="Delete a message"); p.add_argument("channel_id"); p.add_argument("timestamp"); p.add_argument("--yes", action="store_true")
     p = sub.add_parser("request", help="Advanced raw API request"); p.add_argument("method"); p.add_argument("path"); p.add_argument("--data"); p.add_argument("--data-stdin", action="store_true"); p.add_argument("--yes", action="store_true")
     p = sub.add_parser("install", help="Install slackp on PATH"); p.add_argument("--path", default="~/.local/bin/slackp"); p.add_argument("--force", action="store_true")
