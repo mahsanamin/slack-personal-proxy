@@ -180,20 +180,31 @@ async function start() {
       }
     }
 
-    // Initialize Slack connection
-    await slackClient.initialize(startupCreds || undefined);
-
-    // Initialize whitelist (resolves channel/user names)
-    await whitelistService.initialize();
-
-    // Merge store DM-allowlist additions on top of the .env seed
-    await whitelistService.reload(configStore.dmAllowlistEntries());
+    // Slack may intentionally be absent on first run: keep the dashboard online so
+    // credentials can be tested, encrypted, and saved through its setup wizard.
+    // Invalid/expired credentials also must not lock the owner out of that wizard.
+    const envCredsPresent = Boolean(
+      config.slack.botToken || (config.slack.cookie && config.slack.token)
+    );
+    if (startupCreds || envCredsPresent) {
+      try {
+        await slackClient.initialize(startupCreds || undefined);
+        await whitelistService.initialize();
+        await whitelistService.reload(configStore.dmAllowlistEntries());
+      } catch (err) {
+        logger.warn(`Slack is not connected (${err.message}); dashboard setup remains available`);
+      }
+    } else {
+      logger.warn('Slack is not configured; starting in first-run dashboard mode');
+    }
 
     // Hot-reload on dashboard changes — no restart needed
     configStore.on('slackCredsChanged', async () => {
       try {
         const creds = configStore.getSlackCreds();
         await slackClient.reinitialize(creds);
+        await whitelistService.initialize();
+        await whitelistService.reload(configStore.dmAllowlistEntries());
         cacheService.flush && cacheService.flush();
         logger.info('Slack client hot-reloaded after credential change');
       } catch (err) {

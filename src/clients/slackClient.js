@@ -11,6 +11,7 @@ class SlackClient {
     this.currentUserName = null;
     this.teamId = null;
     this.teamName = null;
+    this.ready = false;
     this._lastRequestTime = 0;
     this._requestQueue = Promise.resolve();
     this._throttleMs = config.slackThrottleMs || 100;
@@ -39,6 +40,7 @@ class SlackClient {
    *   encrypted store). When omitted, falls back to the .env-derived config.slack values.
    */
   async initialize(creds = null) {
+    this.ready = false;
     const source = creds || config.slack;
     const botToken = source.botToken || '';
     const cookie = source.cookie || '';
@@ -92,6 +94,11 @@ class SlackClient {
 
     logger.info(`Authenticated as ${this.currentUserName} (${this.currentUserId}) via ${this.authMethod}`);
     logger.info(`Connected to workspace: ${this.teamName} (${this.teamId})`);
+    this.ready = true;
+  }
+
+  isReady() {
+    return this.ready;
   }
 
   /** Rebuild the client with new credentials (used by the dashboard hot-reload). */
@@ -115,6 +122,11 @@ class SlackClient {
   }
 
   async authTest() {
+    if (!this.client) {
+      const err = new Error('Slack is not configured. Add credentials in the dashboard.');
+      err.code = 'SLACK_NOT_CONFIGURED';
+      throw err;
+    }
     const result = await this.client.auth.test();
     return result;
   }

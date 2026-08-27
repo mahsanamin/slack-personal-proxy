@@ -32,6 +32,36 @@ function timeAgo(iso) {
   return Math.floor(s / 86400) + 'd ago';
 }
 
+function copyCommandBox(command) {
+  const field = el('textarea', {
+    class: 'mono', readonly: 'readonly', rows: '8', spellcheck: 'false',
+  });
+  field.value = command;
+  const button = el('button', {
+    class: 'small', text: 'Copy command',
+    onclick: async () => {
+      let copied = false;
+      try {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(command);
+          copied = true;
+        }
+      } catch { /* use selection fallback */ }
+      if (!copied) {
+        field.focus();
+        field.select();
+        try { copied = document.execCommand('copy'); } catch { copied = false; }
+      }
+      button.textContent = copied ? 'Command copied ✓' : 'Select text and copy';
+      setTimeout(() => { button.textContent = 'Copy command'; }, 3000);
+    },
+  });
+  return el('div', { class: 'keybox' }, [
+    field,
+    el('div', { class: 'actions' }, [button]),
+  ]);
+}
+
 // ---- API ----
 async function api(path, opts) {
   const res = await fetch('/dashboard' + path, Object.assign({
@@ -71,6 +101,12 @@ async function boot() {
   try {
     STATE.status = await api('/api/status');
     STATE.tab = tabFromHash();
+    // On a fresh install there is nothing useful on Overview yet. Take the owner
+    // straight to the credential wizard instead of showing a dead-end notice.
+    if (STATE.status.firstRun && STATE.tab === 'overview') {
+      STATE.tab = 'setup';
+      history.replaceState(null, '', '#setup');
+    }
     renderMain();
   } catch (err) {
     if (err.status === 401) {
@@ -201,7 +237,15 @@ const OVERVIEW_PANELS = [
 async function viewOverview(root, fresh) {
   if (STATE.status && STATE.status.firstRun) {
     clear(root);
-    root.appendChild(el('div', { class: 'notice warn', text: 'Slack is not connected yet. Go to “Slack Setup” to paste your tokens.' }));
+    root.appendChild(el('div', { class: 'notice warn' }, [
+      el('div', { text: 'Slack is not connected yet.' }),
+      el('div', { class: 'actions' }, [
+        el('button', {
+          text: 'Open Slack Setup',
+          onclick: () => { location.hash = 'setup'; },
+        }),
+      ]),
+    ]));
     return;
   }
   clear(root);
@@ -410,6 +454,18 @@ async function viewSetup(root) {
   const cookie = el('input', { type: 'password', placeholder: 'xoxd-…' });
   const token = el('input', { type: 'password', placeholder: 'xoxc-…' });
   const bot = el('input', { type: 'password', placeholder: 'xoxb-… (optional, instead of cookie+token)' });
+  const copyTokenCommand = `(() => {
+  const config = JSON.parse(localStorage.getItem('localConfig_v2') || '{}');
+  const teams = config.teams || {};
+  const openWorkspaceId = location.pathname.split('/').find(part => teams[part]);
+  const workspaceIds = Object.keys(teams);
+  const workspaceId = openWorkspaceId || (workspaceIds.length === 1 ? workspaceIds[0] : null);
+  if (!workspaceId || !teams[workspaceId] || !teams[workspaceId].token) {
+    throw new Error('Open the Slack workspace you want, wait for it to load, then run this command again.');
+  }
+  copy(teams[workspaceId].token);
+  return 'COPIED xoxc token for ' + teams[workspaceId].name + ' (' + workspaceId + '). Return to Slack Proxy and paste into SLACK_TOKEN.';
+})()`;
 
   const getCreds = () => ({ cookie: cookie.value.trim(), token: token.value.trim(), botToken: bot.value.trim() });
   const test = async () => {
@@ -444,10 +500,46 @@ async function viewSetup(root) {
       : null,
     el('div', { class: 'card' }, [
       el('h2', { text: connected ? 'Replace Slack credentials' : 'Connect Slack' }),
+      el('div', { class: 'notice warn' }, [
+        el('strong', { text: 'Keep these credentials private. ' }),
+        'The xoxd cookie and xoxc token provide access as your signed-in Slack user. Only collect them from your own account and never send them in chat or email.',
+      ]),
+      el('h3', { text: 'Personal Slack session (xoxd + xoxc)' }),
+      el('ol', {}, [
+        el('li', {}, [
+          'On the computer where you use Slack, open ',
+          el('a', { href: 'https://app.slack.com/client', target: '_blank', rel: 'noopener', text: 'Slack in your browser ↗' }),
+          ', sign in, and open the workspace you want this proxy to use.',
+        ]),
+        el('li', {}, [
+          'Open browser Developer Tools: ', el('strong', { text: 'F12' }), ' on Windows/Linux, or ',
+          el('strong', { text: '⌘⌥I' }), ' on macOS.',
+        ]),
+        el('li', {}, [
+          'Get the cookie: select ', el('strong', { text: 'Application' }), ' (Chrome/Edge) or ',
+          el('strong', { text: 'Storage' }), ' (Firefox) → Cookies → ',
+          el('span', { class: 'mono', text: 'https://app.slack.com' }), ' → row named ',
+          el('span', { class: 'mono', text: 'd' }), '. Copy its entire Value, beginning ',
+          el('span', { class: 'mono', text: 'xoxd-' }), ', into SLACK_COOKIE below.',
+        ]),
+        el('li', {}, [
+          'Get the token without looking up any IDs: click ', el('strong', { text: 'Copy command' }),
+          ' below. Return to the Slack browser tab, select the ', el('strong', { text: 'Console' }),
+          ' tab, paste the command, and press Enter.',
+          copyCommandBox(copyTokenCommand),
+          'The Console must say “COPIED xoxc token for …”. Return here, click the SLACK_TOKEN field, and press Ctrl+V (or ⌘V on macOS).',
+        ]),
+        el('li', {}, [
+          'Leave SLACK_BOT_TOKEN empty. Click ', el('strong', { text: 'Test connection' }),
+          '; after it reports your user and workspace, click ', el('strong', { text: 'Save & connect' }), '.',
+        ]),
+      ]),
+      el('p', { class: 'muted', text: 'If the Console reports that localConfig_v2 is missing, make sure Slack is fully loaded in that tab, refresh it, and try again. If your browser blocks pasting into DevTools, type the command manually.' }),
+      el('h3', { text: 'Official Slack app alternative (xoxb)' }),
       el('p', { class: 'muted' }, [
-        'Get these from DevTools on ', el('span', { class: 'mono', text: 'app.slack.com' }),
-        '. Cookie ', el('span', { class: 'mono', text: 'd' }), ' (xoxd-) under Application ▸ Cookies; token via console: ',
-        el('span', { class: 'mono', text: 'Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token' }), '.',
+        'If your workspace allows app installation, create and install a Slack app from ',
+        el('a', { href: 'https://api.slack.com/apps', target: '_blank', rel: 'noopener', text: 'Slack App Management ↗' }),
+        ', then copy its Bot User OAuth Token into SLACK_BOT_TOKEN. Leave the xoxd/xoxc fields empty. Bot permissions can be narrower and some personal-user features may not be available.',
       ]),
       msg,
       el('label', { text: 'SLACK_COOKIE (xoxd-)' }), cookie,

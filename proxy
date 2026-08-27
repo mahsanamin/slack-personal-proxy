@@ -73,12 +73,10 @@ health_url() {
 validate_env() {
   load_env
   if [ -z "${API_KEY:-}" ]; then
-    echo "ERROR: API_KEY is not set in .env"
-    exit 1
+    echo "NOTICE: API_KEY is not set; create one from the dashboard before using /api or /mcp."
   fi
   if [ -z "${SLACK_BOT_TOKEN:-}" ] && { [ -z "${SLACK_COOKIE:-}" ] || [ -z "${SLACK_TOKEN:-}" ]; }; then
-    echo "ERROR: No Slack credentials configured. Set SLACK_BOT_TOKEN or both SLACK_COOKIE and SLACK_TOKEN"
-    exit 1
+    echo "NOTICE: Slack is not configured; starting in first-run mode for dashboard setup."
   fi
 }
 

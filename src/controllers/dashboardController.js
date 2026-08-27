@@ -11,6 +11,7 @@ const ERR = {
   DASHBOARD_NOT_CONFIGURED: { code: 'DASHBOARD_NOT_CONFIGURED', status: 503, message: 'Dashboard login is not configured. Set DASHBOARD_USER and DASHBOARD_PASSWORD_HASH.' },
   NO_MASTER_KEY: { code: 'NO_MASTER_KEY', status: 400, message: 'DASHBOARD_MASTER_KEY is not set — cannot store Slack tokens securely.' },
   SLACK_TEST_FAILED: { code: 'SLACK_TEST_FAILED', status: 400, message: 'Slack credentials failed auth.test.' },
+  STORE_WRITE_FAILED: { code: 'STORE_WRITE_FAILED', status: 500, message: 'Could not save encrypted credentials. Check write access to the data directory.' },
   BAD_REQUEST: { code: 'BAD_REQUEST', status: 400, message: 'Invalid request.' },
   NOT_FOUND: { code: 'NOT_FOUND', status: 404, message: 'Not found.' },
 };
@@ -83,7 +84,7 @@ async function status(req, res, next) {
     const exposedOnNetwork = bindAddress === '0.0.0.0' || config.allowedIps.includes('0.0.0.0');
 
     res.json(formatSuccessResponse({
-      firstRun: slackAuth !== 'valid' && !usingStoredCreds && !config.slack.token && !config.slack.botToken,
+      firstRun: slackAuth !== 'valid',
       slack: {
         auth: slackAuth,
         team,
@@ -141,7 +142,14 @@ async function saveSlack(req, res, next) {
       );
     }
 
-    configStore.setSlackCreds({ cookie, token, botToken }); // emits slackCredsChanged → hot reload
+    try {
+      configStore.setSlackCreds({ cookie, token, botToken }); // emits slackCredsChanged → hot reload
+    } catch (err) {
+      logger.error(`Could not save Slack credentials: ${err.message}`);
+      return res.status(ERR.STORE_WRITE_FAILED.status).json(
+        formatErrorResponse(ERR.STORE_WRITE_FAILED, { reason: err.message })
+      );
+    }
     res.json(formatSuccessResponse({
       saved: true,
       team: result.team,

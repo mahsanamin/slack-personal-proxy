@@ -20,7 +20,25 @@ npm run setup    # choose option 2
 | What | Where | Looks like |
 |------|-------|------------|
 | **Cookie** | DevTools → Application → Cookies → `d` | `xoxd-...` |
-| **Token** | DevTools → Console → run: `copy(Object.values(JSON.parse(localStorage.localConfig_v2).teams)[0].token)` | `xoxc-...` |
+| **Token** | Dashboard → Slack Setup → **Copy command**, then run it in Slack DevTools Console | `xoxc-...` |
+
+Exact browser steps:
+
+1. Open `https://app.slack.com/client`, sign in, and open the intended workspace.
+2. Open Developer Tools (`F12` on Windows/Linux, `Cmd+Option+I` on macOS).
+3. In Chrome/Edge, select **Application → Cookies → https://app.slack.com**. In
+   Firefox, select **Storage → Cookies → https://app.slack.com**. Copy the complete
+   value of the cookie named `d`; it should begin with `xoxd-`.
+4. Open the dashboard's **Slack Setup** tab and click **Copy command**. Return to
+   Slack's **Console**, paste the command, and press Enter. The command automatically
+   detects the open workspace, copies its token, and reports `COPIED xoxc token for …`.
+   Return to the dashboard and paste it into `SLACK_TOKEN`.
+5. In the proxy dashboard's **Slack Setup** tab, paste the two values, select
+   **Test connection**, then **Save & connect**.
+
+Treat both values as passwords: they grant access as your signed-in Slack user. If
+you use multiple workspaces and the test identifies the wrong one, open the intended
+workspace immediately before copying, or temporarily sign out of the others.
 
 Then put them in `.env`:
 ```bash
