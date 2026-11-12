@@ -10,9 +10,30 @@ function sessionSecret() {
   return sha256(`${d.masterKey || ''}|${d.passwordHash || ''}|sp-dashboard-session`);
 }
 
-function issue(user) {
-  const ttlMin = (config.dashboard && config.dashboard.sessionTtlMin) || 120;
-  return signSession({ u: user, exp: Date.now() + ttlMin * 60000 }, sessionSecret());
+// Normal sessions expire after sessionTtlMin. A "remember this machine" session lasts
+// rememberDays, and every request made with it renews it (see dashboardAuth), so it only
+// ends after that many days without use.
+function sessionMaxAgeMs(remember) {
+  const d = config.dashboard || {};
+  if (remember) return (d.rememberDays || 30) * 24 * 60 * 60000;
+  return (d.sessionTtlMin || 120) * 60000;
+}
+
+function issue(user, { remember = false } = {}) {
+  return signSession(
+    { u: user, r: Boolean(remember), exp: Date.now() + sessionMaxAgeMs(remember) },
+    sessionSecret()
+  );
+}
+
+function cookieOptions(remember = false) {
+  return {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: Boolean(config.enableHttps),
+    maxAge: sessionMaxAgeMs(remember),
+    path: '/dashboard',
+  };
 }
 
 function read(token) {
@@ -33,4 +54,4 @@ function readCookie(req, name) {
   return null;
 }
 
-module.exports = { COOKIE, sessionSecret, issue, read, readCookie };
+module.exports = { COOKIE, sessionSecret, issue, read, readCookie, cookieOptions };

@@ -152,10 +152,11 @@ function renderLogin() {
   const msg = el('div');
   const u = el('input', { type: 'text', id: 'lu', autocomplete: 'username' });
   const p = el('input', { type: 'password', id: 'lp', autocomplete: 'current-password' });
+  const remember = el('input', { type: 'checkbox', id: 'lr' });
   const submit = async () => {
     clear(msg);
     try {
-      await api('/login', { method: 'POST', body: JSON.stringify({ user: u.value, password: p.value }) });
+      await api('/login', { method: 'POST', body: JSON.stringify({ user: u.value, password: p.value, remember: remember.checked }) });
       boot();
     } catch (err) {
       msg.appendChild(el('div', { class: 'notice err', text: err.message }));
@@ -169,6 +170,7 @@ function renderLogin() {
       msg,
       el('label', { text: 'Username' }), u,
       el('label', { text: 'Password' }), p,
+      el('label', { class: 'remember' }, [remember, ' Remember this machine (stay signed in)']),
       el('div', { class: 'actions' }, [el('button', { text: 'Sign in', onclick: submit })]),
     ]),
   ]));

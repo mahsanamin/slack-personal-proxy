@@ -4,7 +4,7 @@ const logger = require('../utils/logger');
 const { formatSuccessResponse, formatErrorResponse, maskToken } = require('../utils/helpers');
 const { verifyPassword, timingSafeEqualStr } = require('../utils/secureCrypto');
 const { compactMention, compactThread } = require('../utils/compactThread');
-const { COOKIE, issue } = require('../utils/dashboardSession');
+const { COOKIE, issue, cookieOptions } = require('../utils/dashboardSession');
 const { isValidChannelId, FULL_ACCESS } = require('../services/keyAccess');
 
 const ERR = {
@@ -23,16 +23,6 @@ function dashboardConfigured() {
   return Boolean(d.enabled && d.user && d.passwordHash);
 }
 
-function cookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: 'strict',
-    secure: Boolean(config.enableHttps),
-    maxAge: ((config.dashboard && config.dashboard.sessionTtlMin) || 120) * 60000,
-    path: '/dashboard',
-  };
-}
-
 // --- Auth ---
 
 function login(req, res) {
@@ -46,8 +36,9 @@ function login(req, res) {
     logger.warn(`Dashboard login failed for user "${user}"`);
     return res.status(ERR.BAD_LOGIN.status).json(formatErrorResponse(ERR.BAD_LOGIN));
   }
-  res.cookie(COOKIE, issue(config.dashboard.user), cookieOptions());
-  res.json(formatSuccessResponse({ user: config.dashboard.user }));
+  const remember = req.body.remember === true;
+  res.cookie(COOKIE, issue(config.dashboard.user, { remember }), cookieOptions(remember));
+  res.json(formatSuccessResponse({ user: config.dashboard.user, remember }));
 }
 
 function logout(req, res) {

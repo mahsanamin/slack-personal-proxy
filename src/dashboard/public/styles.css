@@ -123,3 +123,5 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .pick-row:hover { background: var(--panel-2); }
 .pick-row input[type=checkbox] { width: auto; margin: 0; }
 select { width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+.remember { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 14px 0 0; cursor: pointer; }
+.remember input[type=checkbox] { width: auto; margin: 0; }

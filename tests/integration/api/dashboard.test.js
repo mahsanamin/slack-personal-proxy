@@ -137,6 +137,24 @@ describe('Dashboard API', () => {
     }
   });
 
+  test('login: "remember this machine" gives a 30-day cookie, otherwise 120 minutes', async () => {
+    const remembered = await request(app).post('/dashboard/login').send({ user: 'admin', password: 's3cret-pass', remember: true });
+    expect(remembered.status).toBe(200);
+    expect(remembered.headers['set-cookie'][0]).toContain('Max-Age=2592000');
+
+    const normal = await request(app).post('/dashboard/login').send({ user: 'admin', password: 's3cret-pass' });
+    expect(normal.headers['set-cookie'][0]).toContain('Max-Age=7200');
+  });
+
+  test('a remembered session is renewed on use, so active users stay signed in', async () => {
+    const login = await request(app).post('/dashboard/login').send({ user: 'admin', password: 's3cret-pass', remember: true });
+    const cookie = login.headers['set-cookie'][0].split(';')[0];
+    const res = await request(app).get('/dashboard/api/status').set('Cookie', cookie);
+    expect(res.status).toBe(200);
+    // The response carries a fresh cookie with the long lifetime again.
+    expect(res.headers['set-cookie'][0]).toContain('Max-Age=2592000');
+  });
+
   test('login rejects a bad password', async () => {
     const res = await request(app).post('/dashboard/login').send({ user: 'admin', password: 'wrong' });
     expect(res.status).toBe(401);

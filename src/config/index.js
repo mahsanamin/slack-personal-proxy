@@ -42,6 +42,7 @@ const config = Object.freeze({
     // 32+ char passphrase; encrypts Slack tokens at rest. Empty = token-management disabled.
     masterKey: process.env.DASHBOARD_MASTER_KEY || '',
     sessionTtlMin: parseInt_(process.env.DASHBOARD_SESSION_TTL_MIN, 120),
+    rememberDays: parseInt_(process.env.DASHBOARD_REMEMBER_DAYS, 30),
   }),
 
   // Rate limiting
