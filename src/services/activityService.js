@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { filterMatches } = require('./keyAccess');
 
 class ActivityService {
   constructor(slackClient, cacheService, messageService, whitelistService) {
@@ -8,7 +9,7 @@ class ActivityService {
     this.whitelist = whitelistService;
   }
 
-  async getThreadsImIn(count = 20) {
+  async getThreadsImIn(count = 20, access) {
     const userId = this.slack.currentUserId;
     const query = 'from:me';
 
@@ -20,7 +21,7 @@ class ActivityService {
     let apiCalls = 1;
 
     // Enrich with thread metadata (parsed from permalinks, no API calls)
-    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    const enrichResult = await this.slack.enrichSearchMatches(filterMatches(access, searchResult.messages));
     apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Map();
@@ -100,7 +101,7 @@ class ActivityService {
     };
   }
 
-  async getMyThreads(count = 20, includeReplies = true) {
+  async getMyThreads(count = 20, includeReplies = true, access) {
     const userId = this.slack.currentUserId;
     const query = 'from:me';
 
@@ -112,7 +113,10 @@ class ActivityService {
     let apiCalls = 1;
 
     // Enrich with thread metadata; fetch reply_count for thread parents
-    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages, { fetchReplyCounts: true });
+    const enrichResult = await this.slack.enrichSearchMatches(
+      filterMatches(access, searchResult.messages),
+      { fetchReplyCounts: true }
+    );
     apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Map();

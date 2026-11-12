@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_get_thread_activity',
     'Get threads you participated in that have new replies since your last message. Shows what conversations need your attention.',
@@ -12,7 +12,7 @@ function register(server, services) {
     async ({ count }) => {
       try {
         const { activityService } = services();
-        const result = await activityService.getThreadsImIn(count);
+        const result = await activityService.getThreadsImIn(count, access);
 
         const lines = [];
         lines.push(`# Thread Activity (${result.threads_with_new_activity} with new replies)\n`);

@@ -18,6 +18,7 @@ This project puts a small control plane between the agent and Slack:
 - Every computer or agent gets its own revocable API key.
 - The server is reachable through your tailnet, not your local LAN or the public internet.
 - Reads are convenient: search, threads, mentions, history, users, and unread activity.
+- Each key can be limited to chosen channels, and set to read only. A key limited to channels cannot read your DMs.
 - Writes stay controlled with channel and DM allowlists.
 - An agent can request an occasional DM, but only you can approve it.
 

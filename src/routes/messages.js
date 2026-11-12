@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const channelAccessParam = require('../middleware/channelAccess');
 const {
   sendMessage,
   sendDirectMessage,
@@ -20,6 +21,9 @@ const {
 } = require('../middleware/validator');
 
 const router = Router();
+
+// Every :channelId route is checked against the calling key's channel scope.
+router.param('channelId', channelAccessParam);
 
 // Send to an allowlisted user without requiring callers to discover a D-channel ID.
 router.post(

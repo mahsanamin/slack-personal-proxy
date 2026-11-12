@@ -341,14 +341,47 @@ async function viewKeys(root) {
     } catch (err) { clear(listBody); listBody.appendChild(el('div', { class: 'notice err', text: err.message })); }
   }
 
+  const picker = channelPicker();
+  const access = el('select', { id: 'ka' }, [
+    el('option', { value: 'read', text: 'Read only (recommended)' }),
+    el('option', { value: 'read_write', text: 'Read and write (sends and deletes still need the channel to be selected)' }),
+  ]);
+  const scope = el('select', { id: 'ks' }, [
+    el('option', { value: 'selected', text: 'Selected channels only (recommended)' }),
+    el('option', { value: 'all', text: 'All channels, including my direct messages' }),
+  ]);
+  const pickerBox = el('div', {}, [
+    el('label', { text: 'Channels this key may use' }),
+    picker.node,
+  ]);
+  const syncScope = () => {
+    pickerBox.style.display = scope.value === 'selected' ? '' : 'none';
+    if (scope.value === 'selected') picker.load();
+  };
+  scope.addEventListener('change', syncScope);
+
   const create = async () => {
+    const body = { label: label.value || 'unnamed', access: access.value };
+    if (scope.value === 'all') {
+      if (!confirm('This key can read every channel AND every direct message you can see. Only continue if that is intended.')) return;
+      body.channels = 'all';
+    } else {
+      const ids = picker.selected();
+      if (!ids.length) {
+        clear(created);
+        created.appendChild(el('div', { class: 'notice err', text: 'Select at least one channel, or choose "All channels".' }));
+        return;
+      }
+      body.channels = ids;
+    }
     try {
-      const r = await api('/api/keys', { method: 'POST', body: JSON.stringify({ label: label.value || 'unnamed' }) });
+      const r = await api('/api/keys', { method: 'POST', body: JSON.stringify(body) });
       showCreatedKey(created, r.key);   // stays on screen with Copy; NOT wiped by a re-render
       label.value = '';
       refreshList();                    // update the list only, leaving the key visible
     } catch (err) { clear(created); created.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
   };
+  syncScope();
 
   root.appendChild(el('div', { class: 'grid' }, [
     el('div', { class: 'card' }, [
@@ -359,6 +392,9 @@ async function viewKeys(root) {
       el('h3', { class: 'step-title', text: '2. Generate its secure key' }),
       el('p', { class: 'muted', text: 'Give the machine a recognizable label. Generate the key, copy it immediately, and do not share or screenshot it.' }),
       el('label', { text: 'Label' }), label,
+      el('label', { text: 'Access' }), access,
+      el('label', { text: 'Which channels' }), scope,
+      pickerBox,
       el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
       created,
       el('h3', { class: 'step-title', text: '3. Connect the machine' }),
@@ -373,6 +409,69 @@ async function viewKeys(root) {
     ]),
   ]));
   refreshList();
+}
+
+// Human-readable scope for a key row. Keys from before scopes existed are full access.
+function keyScopeText(k) {
+  const access = k.access === 'read_write' ? 'read & write' : 'read only';
+  const channels = k.readChannels === null || k.readChannels === undefined
+    ? 'all channels incl. DMs'
+    : k.readChannels.length + ' selected channel' + (k.readChannels.length === 1 ? '' : 's');
+  return access + ' · ' + channels;
+}
+
+// Channel checklist used when creating a key. Lists channels only, never DMs.
+function channelPicker() {
+  const chosen = new Set();
+  let channels = [];
+  let loaded = false;
+  const filter = el('input', { type: 'text', placeholder: 'Filter channels' });
+  const count = el('span', { class: 'muted', text: '0 selected' });
+  const list = el('div', { class: 'pick-list' });
+
+  function render() {
+    clear(list);
+    const q = filter.value.trim().toLowerCase();
+    const shown = channels.filter((c) => !q || c.name.toLowerCase().includes(q));
+    if (!shown.length) {
+      list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels…' : 'No channels match.' }));
+      return;
+    }
+    for (const c of shown) {
+      const box = el('input', { type: 'checkbox' });
+      box.checked = chosen.has(c.id);
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(c.id); else chosen.delete(c.id);
+        count.textContent = chosen.size + ' selected';
+      });
+      list.appendChild(el('label', { class: 'pick-row' }, [
+        box,
+        el('span', { text: ' #' + c.name }),
+        c.is_private ? el('span', { class: 'muted', text: ' private' }) : null,
+      ]));
+    }
+  }
+
+  async function load() {
+    if (loaded) return;
+    try {
+      const d = await api('/api/channels');
+      channels = d.channels || [];
+      loaded = true;
+    } catch (err) {
+      clear(list);
+      list.appendChild(el('div', { class: 'notice err', text: 'Could not load channels: ' + err.message }));
+      return;
+    }
+    render();
+  }
+
+  filter.addEventListener('input', render);
+  return {
+    node: el('div', {}, [el('div', { class: 'row' }, [filter, count]), list]),
+    load,
+    selected: () => [...chosen],
+  };
 }
 
 // Show a just-created key with a selectable field + Copy button, so it can be copied
@@ -402,6 +501,7 @@ function keyRow(k, refreshList) {
       el('div', {}, [
         el('div', {}, [el('strong', { text: k.label }), ' ', el('span', { class: 'mono muted', text: k.prefix })]),
         el('div', { class: 'meta' }, [
+          el('span', { text: keyScopeText(k) }),
           el('span', { text: 'created ' + timeAgo(k.createdAt) }),
           el('span', { text: k.lastUsedAt ? 'used ' + timeAgo(k.lastUsedAt) : 'never used' }),
         ]),

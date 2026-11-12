@@ -8,19 +8,19 @@ const search = require('./tools/search');
 const getThread = require('./tools/getThread');
 const unread = require('./tools/unread');
 
-function createMcpServer(getServices) {
+function createMcpServer(getServices, access) {
   const server = new McpServer({
     name: 'slack-personal-proxy',
     version: '1.0.0',
   });
 
-  slackSummary.register(server, getServices);
-  getMentions.register(server, getServices);
-  getThreadActivity.register(server, getServices);
-  sendMessage.register(server, getServices);
-  search.register(server, getServices);
-  getThread.register(server, getServices);
-  unread.register(server, getServices);
+  slackSummary.register(server, getServices, access);
+  getMentions.register(server, getServices, access);
+  getThreadActivity.register(server, getServices, access);
+  sendMessage.register(server, getServices, access);
+  search.register(server, getServices, access);
+  getThread.register(server, getServices, access);
+  unread.register(server, getServices, access);
 
   return server;
 }

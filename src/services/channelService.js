@@ -1,6 +1,7 @@
 const config = require('../config');
 const logger = require('../utils/logger');
 const { CACHE_PREFIXES } = require('../utils/constants');
+const { isScoped, canRead } = require('./keyAccess');
 
 class ChannelService {
   constructor(slackClient, cacheService, paginationService, whitelistService) {
@@ -10,7 +11,17 @@ class ChannelService {
     this.whitelist = whitelistService;
   }
 
-  async listChannels() {
+  // The cache holds the full channel list for everyone. Key scope is applied after it
+  // is read, so the cache never stores anything per key.
+  async listChannels(access) {
+    const data = await this._loadChannelList();
+    if (!isScoped(access)) return data;
+
+    const channels = data.channels.filter((ch) => canRead(access, ch.id));
+    return { ...data, channels, total_count: channels.length };
+  }
+
+  async _loadChannelList() {
     const cached = this.cache.get(CACHE_PREFIXES.CHANNEL_LIST);
     if (cached) {
       return { ...cached, cached: true };

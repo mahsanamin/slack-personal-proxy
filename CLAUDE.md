@@ -34,4 +34,13 @@ global "use a worktree, never branch in main" preference for THIS repo only.
 
 ## Whitelist
 
-Write-only. `ALLOWED_WRITE_CHANNELS` gates sends. `ALLOWED_DM_USERS` gates DMs. Reads unrestricted.
+Global, not per key: `ALLOWED_WRITE_CHANNELS` gates sends. `ALLOWED_DM_USERS` gates DMs.
+
+## Per-key channel scope
+
+Each API key has `access` (`read` | `read_write`) and `readChannels` (`null` = all channels,
+or a list of channel IDs). Enforced by `src/services/keyAccess.js`. Route `:channelId` params are
+checked in `src/middleware/channelAccess.js` (GET = read, other methods = write). Search, mentions
+and activity filter Slack results by channel before enrichment. Selected-channel keys cannot send
+DMs. Keys created before scopes existed have full access. Do not add a route that reads channel
+data without checking the key's access.

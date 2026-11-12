@@ -19,6 +19,9 @@ All error codes are defined in `src/utils/constants.js` as frozen objects:
 | `INVALID_COUNT` | 400 | Count out of range |
 | `INVALID_TIMESTAMP` | 400 | Bad Slack timestamp |
 | `WRITE_CHANNEL_NOT_WHITELISTED` | 403 | Channel not in write list |
+| `CHANNEL_NOT_IN_KEY_SCOPE` | 403 | This API key was not given that channel |
+| `KEY_READ_ONLY` | 403 | This API key is read-only |
+| `DM_NOT_IN_KEY_SCOPE` | 403 | Selected-channel keys cannot send direct messages |
 | `USER_NOT_WHITELISTED` | 403 | User not in DM list |
 | `WRITE_OPS_DISABLED` | 403 | ENABLE_WRITE_OPS=false |
 | `CHANNEL_NOT_FOUND` | 404 | Slack says channel_not_found |

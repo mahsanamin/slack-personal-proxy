@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_unread',
     'Catch up on everything: @mentions, threads you\'re in with new replies, and threads you started with new activity. Runs all 3 queries in parallel and deduplicates. Best single call to see what needs your attention.',
@@ -15,9 +15,9 @@ function register(server, services) {
 
         // All three in parallel — no thread context to keep it fast
         const [mentions, threadsImIn, myThreads] = await Promise.all([
-          mentionService.getAllMentions(count, false),
-          activityService.getThreadsImIn(count),
-          activityService.getMyThreads(count, false),
+          mentionService.getAllMentions(count, false, access),
+          activityService.getThreadsImIn(count, access),
+          activityService.getMyThreads(count, false, access),
         ]);
 
         // Deduplicate threads across threadsImIn and myThreads

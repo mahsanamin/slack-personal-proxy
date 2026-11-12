@@ -116,3 +116,10 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .keybox { background: var(--bg); border: 1px dashed var(--accent); padding: 12px; border-radius: 8px; word-break: break-all; margin-top: 8px; }
 .muted { color: var(--muted); }
 .spinner { color: var(--muted); font-size: 13px; }
+
+/* API key channel picker */
+.pick-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; padding: 4px 0; }
+.pick-row { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 12px; color: var(--text); font-size: 14px; cursor: pointer; }
+.pick-row:hover { background: var(--panel-2); }
+.pick-row input[type=checkbox] { width: auto; margin: 0; }
+select { width: 100%; padding: 10px 12px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; font: inherit; }

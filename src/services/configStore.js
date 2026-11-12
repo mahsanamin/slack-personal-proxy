@@ -184,7 +184,8 @@ class ConfigStore extends EventEmitter {
   }
 
   listKeys() {
-    // Metadata only — never the secret.
+    // Metadata only, never the secret. Keys created before scopes existed show as
+    // full access (read_write, all channels), which is what they actually get.
     return this._keys.map((k) => ({
       id: k.id,
       label: k.label,
@@ -192,11 +193,21 @@ class ConfigStore extends EventEmitter {
       createdAt: k.createdAt,
       lastUsedAt: k.lastUsedAt || null,
       revokedAt: k.revokedAt || null,
+      access: k.access || 'read_write',
+      readChannels: Array.isArray(k.readChannels) ? [...k.readChannels] : null,
     }));
   }
 
-  /** Creates a key, persists only its fingerprint, and returns the secret ONCE. */
-  createKey(label) {
+  /**
+   * Creates a key, persists only its fingerprint, and returns the secret ONCE.
+   * scope.access: 'read' (default) or 'read_write'.
+   * scope.readChannels: null for every channel, or an array of channel IDs.
+   */
+  createKey(label, scope = {}) {
+    const access = scope.access === 'read_write' ? 'read_write' : 'read';
+    const readChannels = scope.readChannels === null || scope.readChannels === undefined
+      ? null
+      : [...new Set(scope.readChannels)];
     const secret = generateApiKey();
     const rec = {
       id: crypto.randomUUID(),
@@ -206,10 +217,12 @@ class ConfigStore extends EventEmitter {
       createdAt: new Date().toISOString(),
       lastUsedAt: null,
       revokedAt: null,
+      access,
+      readChannels,
     };
     this._keys.push(rec);
     this._writeJson(this._path('apikeys.json'), this._keys);
-    logger.info(`API key created: ${rec.label} (${rec.prefix})`);
+    logger.info(`API key created: ${rec.label} (${rec.prefix}, ${access}, ${readChannels ? readChannels.length + ' channels' : 'all channels'})`);
     return { key: secret, meta: this.listKeys().find((k) => k.id === rec.id) };
   }
 

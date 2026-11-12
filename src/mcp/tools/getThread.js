@@ -1,7 +1,8 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
+const { assertRead } = require('../../services/keyAccess');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_get_thread',
     'Get the complete thread (parent message + all replies) for a specific conversation. Use channel_id and thread_ts from other tools.',
@@ -13,6 +14,7 @@ function register(server, services) {
     },
     async ({ channel_id, thread_ts }) => {
       try {
+        assertRead(access, channel_id);
         const { messageService } = services();
         const result = await messageService.getCompleteThread(channel_id, thread_ts);
 

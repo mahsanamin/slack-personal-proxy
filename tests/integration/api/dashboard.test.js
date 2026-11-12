@@ -35,6 +35,14 @@ function buildApp() {
       listUsers: async () => ({ users: [{ id: 'U777', name: 'byname', profile: { display_name: 'By Name' }, real_name: 'By Name' }] }),
     },
     mentionService: { getAllMentions: async () => ({ mentions: [] }), getMentionThreads: async () => ({ threads: [] }) },
+    channelService: {
+      listChannels: async () => ({
+        channels: [
+          { id: 'C0AAAAAAA1', name: 'general', is_private: false, is_archived: false, member_count: 4 },
+          { id: 'C0BBBBBBB2', name: 'secret', is_private: true, is_archived: false, member_count: 2 },
+        ],
+      }),
+    },
     activityService: { getThreadsImIn: async () => ({ threads: [] }), getMyThreads: async () => ({ threads: [] }) },
     whitelistService: {
       resolveUserIdFromDmChannel: async (channelId) => channelId === 'D020BE909FV' ? 'U1' : null,
@@ -103,7 +111,7 @@ describe('Dashboard API', () => {
   });
 
   test('a CLI key can request a DM but another CLI key cannot read that request', async () => {
-    const first = configStore.createKey('requesting-machine');
+    const first = configStore.createKey('requesting-machine', { access: 'read_write', readChannels: null });
     const second = configStore.createKey('different-machine');
     try {
       const requested = await request(app)
@@ -148,8 +156,57 @@ describe('Dashboard API', () => {
       expect(res.body.data.security.masterKeySet).toBe(true);
     });
 
+    test('API key: create requires a scope, and a bad scope is refused', async () => {
+      const noScope = await agent.post('/dashboard/api/keys').send({ label: 'no-scope' });
+      expect(noScope.status).toBe(400);
+      expect(noScope.body.error.code).toBe('BAD_KEY_SCOPE');
+
+      const emptyList = await agent.post('/dashboard/api/keys').send({ label: 'empty', channels: [] });
+      expect(emptyList.status).toBe(400);
+
+      const badAccess = await agent.post('/dashboard/api/keys').send({ label: 'bad', access: 'admin', channels: 'all' });
+      expect(badAccess.status).toBe(400);
+
+      const badId = await agent.post('/dashboard/api/keys').send({ label: 'bad', channels: ['general'] });
+      expect(badId.status).toBe(400);
+
+      const keys = await agent.get('/dashboard/api/keys');
+      expect(keys.body.data.keys.find((k) => k.label === 'no-scope' || k.label === 'bad' || k.label === 'empty')).toBeUndefined();
+    });
+
+    test('API key: a selected-channel read-only key is stored with its scope', async () => {
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'scoped-key', access: 'read', channels: ['C0AAAAAAA1', 'C0AAAAAAA1'] });
+      expect(created.status).toBe(200);
+      const rec = configStore.verifyApiKey(created.body.data.key);
+      expect(rec.access).toBe('read');
+      expect(rec.readChannels).toEqual(['C0AAAAAAA1']); // duplicates removed
+
+      const list = await agent.get('/dashboard/api/keys');
+      const shown = list.body.data.keys.find((k) => k.label === 'scoped-key');
+      expect(shown.access).toBe('read');
+      expect(shown.readChannels).toEqual(['C0AAAAAAA1']);
+      await agent.delete('/dashboard/api/keys/' + shown.id);
+    });
+
+    test('API key: an all-channels key is stored as unrestricted and defaults to read only', async () => {
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'all-key', channels: 'all' });
+      expect(created.status).toBe(200);
+      const rec = configStore.verifyApiKey(created.body.data.key);
+      expect(rec.access).toBe('read');
+      expect(rec.readChannels).toBeNull();
+      const list = await agent.get('/dashboard/api/keys');
+      await agent.delete('/dashboard/api/keys/' + list.body.data.keys.find((k) => k.label === 'all-key').id);
+    });
+
+    test('channel picker lists channels only, for choosing key scope', async () => {
+      const res = await agent.get('/dashboard/api/channels');
+      expect(res.status).toBe(200);
+      expect(res.body.data.channels.map((c) => c.name)).toEqual(['general', 'secret']);
+      expect(res.body.data.channels[1].is_private).toBe(true);
+    });
+
     test('API key: create (shown once) → verifiable → revoke → rejected', async () => {
-      const created = await agent.post('/dashboard/api/keys').send({ label: 'test-key' });
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'test-key', channels: ['C0AAAAAAA1'] });
       expect(created.status).toBe(200);
       const key = created.body.data.key;
       expect(key.startsWith('spk_')).toBe(true);
@@ -213,7 +270,7 @@ describe('Dashboard API', () => {
     });
 
     test('DM approval: dashboard sends the exact request once and cannot replay it', async () => {
-      const { meta } = configStore.createKey('approval-machine');
+      const { meta } = configStore.createKey('approval-machine', { access: 'read_write', readChannels: null });
       const approval = configStore.createDmApproval({
         target: '@new.person', userId: 'UNEW', name: 'new.person',
         text: 'approved message', apiKeyId: meta.id, apiKeyLabel: meta.label,
@@ -240,7 +297,7 @@ describe('Dashboard API', () => {
     });
 
     test('DM approval: temporary access is bound to one API key and revoked with it', async () => {
-      const { meta } = configStore.createKey('temporary-machine');
+      const { meta } = configStore.createKey('temporary-machine', { access: 'read_write', readChannels: null });
       const approval = configStore.createDmApproval({
         target: '@new.person', userId: 'UNEW', name: 'new.person',
         text: 'temporary message', apiKeyId: meta.id, apiKeyLabel: meta.label,

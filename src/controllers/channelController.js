@@ -1,10 +1,11 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactRecentMessage, compactMessage } = require('../utils/compactThread');
+const { resolveAccess } = require('../services/keyAccess');
 
 async function listChannels(req, res, next) {
   try {
     const { channelService } = req.services;
-    const result = await channelService.listChannels();
+    const result = await channelService.listChannels(resolveAccess(req.apiKey));
 
     res.json(formatSuccessResponse(
       { channels: result.channels, total_count: result.total_count },

@@ -1,5 +1,6 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactSearchResult } = require('../utils/compactThread');
+const { resolveAccess } = require('../services/keyAccess');
 
 async function searchMessages(req, res, next) {
   try {
@@ -10,7 +11,8 @@ async function searchMessages(req, res, next) {
     const sortOrder = req.query.sortOrder || 'timestamp';
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await searchService.searchMessages(query, count, includeThreads, sortOrder);
+    const access = resolveAccess(req.apiKey);
+    const result = await searchService.searchMessages(query, count, includeThreads, sortOrder, access);
     const results = verbose ? result.results : result.results.map(compactSearchResult);
 
     res.json(formatSuccessResponse(

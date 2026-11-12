@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { isScoped, filterMatches } = require('./keyAccess');
 
 class MentionService {
   constructor(slackClient, cacheService, messageService, whitelistService) {
@@ -8,17 +9,19 @@ class MentionService {
     this.whitelist = whitelistService;
   }
 
-  async getAllMentions(count = 20, includeThreads = true) {
+  async getAllMentions(count = 20, includeThreads = true, access) {
     const userId = this.slack.currentUserId;
     const query = `<@${userId}>`;
 
     logger.info(`Fetching mentions for ${userId} (count=${count}, threads=${includeThreads})`);
 
-    const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
+    const scoped = isScoped(access);
+    const searchResult = await this.slack.searchMessages(query, scoped ? 100 : count, 1, 'timestamp', 'desc');
+    const visible = filterMatches(access, searchResult.messages).slice(0, count);
     let apiCalls = 1;
 
     // Enrich with thread metadata that search API doesn't provide
-    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    const enrichResult = await this.slack.enrichSearchMatches(visible);
     apiCalls += enrichResult.apiCalls;
 
     const mentions = [];
@@ -70,22 +73,24 @@ class MentionService {
     return {
       mentions,
       grouped_by_channel: channelCounts,
-      total_mentions: searchResult.total,
+      total_mentions: scoped ? visible.length : searchResult.total,
       api_calls_made: apiCalls,
     };
   }
 
-  async getMentionThreads(count = 20) {
+  async getMentionThreads(count = 20, access) {
     const userId = this.slack.currentUserId;
     const query = `<@${userId}>`;
 
     logger.info(`Fetching mention threads for ${userId} (count=${count})`);
 
-    const searchResult = await this.slack.searchMessages(query, count, 1, 'timestamp', 'desc');
+    const scoped = isScoped(access);
+    const searchResult = await this.slack.searchMessages(query, scoped ? 100 : count, 1, 'timestamp', 'desc');
+    const visible = filterMatches(access, searchResult.messages).slice(0, count);
     let apiCalls = 1;
 
     // Enrich with thread metadata that search API doesn't provide
-    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    const enrichResult = await this.slack.enrichSearchMatches(visible);
     apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Map();

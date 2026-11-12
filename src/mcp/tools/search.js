@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_search',
     'Search Slack messages. Supports Slack search syntax: "from:username", "in:channel-name", "has:link", date filters, etc.',
@@ -16,7 +16,7 @@ function register(server, services) {
     async ({ query, count, include_threads }) => {
       try {
         const { searchService } = services();
-        const result = await searchService.searchMessages(query, count, include_threads);
+        const result = await searchService.searchMessages(query, count, include_threads, 'timestamp', access);
 
         const lines = [];
         lines.push(`# Search: "${query}" (${result.total_matches} matches)\n`);

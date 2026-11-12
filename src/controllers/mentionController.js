@@ -1,5 +1,6 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactMention, compactThread } = require('../utils/compactThread');
+const { resolveAccess } = require('../services/keyAccess');
 
 async function getAllMentions(req, res, next) {
   try {
@@ -8,7 +9,7 @@ async function getAllMentions(req, res, next) {
     const includeThreads = parseBoolean(req.query.includeThreads, true);
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await mentionService.getAllMentions(count, includeThreads);
+    const result = await mentionService.getAllMentions(count, includeThreads, resolveAccess(req.apiKey));
     const mentions = verbose ? result.mentions : result.mentions.map(compactMention);
 
     res.json(formatSuccessResponse(
@@ -26,7 +27,7 @@ async function getMentionThreads(req, res, next) {
     const count = parseInt(req.query.count, 10) || 20;
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await mentionService.getMentionThreads(count);
+    const result = await mentionService.getMentionThreads(count, resolveAccess(req.apiKey));
     const threads = verbose ? result.threads : result.threads.map(compactThread);
 
     res.json(formatSuccessResponse(

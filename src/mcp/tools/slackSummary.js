@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_summary',
     'Get a combined overview of your Slack activity: recent @mentions and threads with new replies. Best first call to understand what needs attention.',
@@ -16,8 +16,8 @@ function register(server, services) {
         const { mentionService, activityService } = services();
 
         const [mentions, threads] = await Promise.all([
-          mentionService.getAllMentions(mention_count, false),
-          activityService.getThreadsImIn(thread_count),
+          mentionService.getAllMentions(mention_count, false, access),
+          activityService.getThreadsImIn(thread_count, access),
         ]);
 
         const lines = [];

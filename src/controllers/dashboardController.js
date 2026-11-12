@@ -5,6 +5,7 @@ const { formatSuccessResponse, formatErrorResponse, maskToken } = require('../ut
 const { verifyPassword, timingSafeEqualStr } = require('../utils/secureCrypto');
 const { compactMention, compactThread } = require('../utils/compactThread');
 const { COOKIE, issue } = require('../utils/dashboardSession');
+const { isValidChannelId, FULL_ACCESS } = require('../services/keyAccess');
 
 const ERR = {
   BAD_LOGIN: { code: 'BAD_LOGIN', status: 401, message: 'Invalid username or password.' },
@@ -14,6 +15,7 @@ const ERR = {
   STORE_WRITE_FAILED: { code: 'STORE_WRITE_FAILED', status: 500, message: 'Could not save encrypted credentials. Check write access to the data directory.' },
   BAD_REQUEST: { code: 'BAD_REQUEST', status: 400, message: 'Invalid request.' },
   NOT_FOUND: { code: 'NOT_FOUND', status: 404, message: 'Not found.' },
+  BAD_KEY_SCOPE: { code: 'BAD_KEY_SCOPE', status: 400, message: 'Choose a valid access level and either all channels or at least one channel.' },
 };
 
 function dashboardConfigured() {
@@ -172,10 +174,27 @@ function listKeys(req, res) {
 
 const STORE_WRITE_FAILED = { code: 'STORE_WRITE_FAILED', status: 500, message: 'Could not save to the data directory. The ./data volume is likely not writable by the container.' };
 
+// Accepts { access: 'read' | 'read_write', channels: 'all' | [channelId, ...] }.
+// Anything else is rejected, so a typo can never quietly make a key broader.
+function parseKeyScope(body) {
+  const access = body.access === undefined ? 'read' : body.access;
+  if (access !== 'read' && access !== 'read_write') return null;
+  if (body.channels === 'all') return { access, readChannels: null };
+  if (Array.isArray(body.channels) && body.channels.length > 0 && body.channels.every(isValidChannelId)) {
+    return { access, readChannels: [...new Set(body.channels)] };
+  }
+  return null;
+}
+
 function createKey(req, res) {
-  const label = (req.body && req.body.label) || 'unnamed';
+  const body = req.body || {};
+  const label = body.label || 'unnamed';
+  const scope = parseKeyScope(body);
+  if (!scope) {
+    return res.status(ERR.BAD_KEY_SCOPE.status).json(formatErrorResponse(ERR.BAD_KEY_SCOPE));
+  }
   try {
-    const { key, meta } = configStore.createKey(label);
+    const { key, meta } = configStore.createKey(label, scope);
     // The secret is returned exactly once and never stored in plaintext.
     res.json(formatSuccessResponse({ key, meta, warning: 'Copy this key now — it will never be shown again.' }));
   } catch (err) {
@@ -192,6 +211,24 @@ function revokeKey(req, res) {
   } catch (err) {
     logger.error(`revokeKey failed: ${err.message}`);
     res.status(STORE_WRITE_FAILED.status).json(formatErrorResponse(STORE_WRITE_FAILED, { reason: err.message }));
+  }
+}
+
+// Channels offered when creating a key. Public and private channels only: direct
+// messages and group DMs are never listed, so they cannot be picked by accident.
+async function listChannelsForKeys(req, res, next) {
+  try {
+    const result = await req.services.channelService.listChannels(FULL_ACCESS);
+    const channels = result.channels.map((c) => ({
+      id: c.id,
+      name: c.name,
+      is_private: Boolean(c.is_private),
+      is_archived: Boolean(c.is_archived),
+      member_count: c.member_count || 0,
+    }));
+    res.json(formatSuccessResponse({ channels }));
+  } catch (err) {
+    next(err);
   }
 }
 
@@ -366,10 +403,10 @@ const summaryRefreshing = new Set();
 function summaryComputers(services, count) {
   const { mentionService, activityService } = services;
   return {
-    mentions: async () => (await mentionService.getAllMentions(count, false)).mentions.map(compactMention),
-    mentionThreads: async () => (await mentionService.getMentionThreads(count)).threads.map(compactThread),
-    threadsImIn: async () => (await activityService.getThreadsImIn(count)).threads.map(compactThread),
-    myThreads: async () => (await activityService.getMyThreads(count, false)).threads.map(compactThread),
+    mentions: async () => (await mentionService.getAllMentions(count, false, FULL_ACCESS)).mentions.map(compactMention),
+    mentionThreads: async () => (await mentionService.getMentionThreads(count, FULL_ACCESS)).threads.map(compactThread),
+    threadsImIn: async () => (await activityService.getThreadsImIn(count, FULL_ACCESS)).threads.map(compactThread),
+    myThreads: async () => (await activityService.getMyThreads(count, false, FULL_ACCESS)).threads.map(compactThread),
   };
 }
 
@@ -419,7 +456,7 @@ async function summary(req, res, next) {
 module.exports = {
   login, logout, bootstrap, status,
   testSlack, saveSlack,
-  listKeys, createKey, revokeKey,
+  listKeys, createKey, revokeKey, listChannelsForKeys,
   listDmUsers, addDmUser, removeDmUser,
   listDmApprovals, decideDmApproval,
   summary,

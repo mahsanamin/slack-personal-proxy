@@ -1,12 +1,13 @@
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { createMcpServer } = require('./server');
 const logger = require('../utils/logger');
+const { resolveAccess } = require('../services/keyAccess');
 
 function mountMcp(app, getServices) {
   // POST /mcp — handles all JSON-RPC messages (initialize, tools/list, tools/call)
   app.post('/mcp', async (req, res) => {
     try {
-      const server = createMcpServer(getServices);
+      const server = createMcpServer(getServices, resolveAccess(req.apiKey));
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless mode
       });

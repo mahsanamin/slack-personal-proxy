@@ -1,8 +1,12 @@
 const { Router } = require('express');
+const channelAccessParam = require('../middleware/channelAccess');
 const { listChannels, getChannelInfo, getRecentMessages, getThreadReplies } = require('../controllers/channelController');
 const { validateChannelId, validateCount, validateBoolean, validateTimestamp, validateOptionalTimestamp, handleValidationErrors } = require('../middleware/validator');
 
 const router = Router();
+
+// Every :channelId route is checked against the calling key's channel scope.
+router.param('channelId', channelAccessParam);
 
 /**
  * @swagger

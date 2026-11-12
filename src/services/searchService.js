@@ -1,4 +1,5 @@
 const logger = require('../utils/logger');
+const { isScoped, filterMatches } = require('./keyAccess');
 
 class SearchService {
   constructor(slackClient, cacheService, messageService, whitelistService) {
@@ -8,18 +9,22 @@ class SearchService {
     this.whitelist = whitelistService;
   }
 
-  async searchMessages(query, count = 10, includeThreads = true, sortOrder = 'timestamp') {
+  async searchMessages(query, count = 10, includeThreads = true, sortOrder = 'timestamp', access) {
     logger.info(`Searching messages: "${query}" (count=${count}, threads=${includeThreads}, sort=${sortOrder})`);
 
     const sortDir = sortOrder === 'score' ? 'desc' : 'desc';
     const sort = sortOrder === 'score' ? 'score' : 'timestamp';
 
-    const searchResult = await this.slack.searchMessages(query, count, 1, sort, sortDir);
+    // A selected-channel key cannot tell Slack which channels to search, so fetch a
+    // larger page, drop matches outside the key's channels, then cut to count.
+    const scoped = isScoped(access);
+    const searchResult = await this.slack.searchMessages(query, scoped ? 100 : count, 1, sort, sortDir);
+    const visible = filterMatches(access, searchResult.messages).slice(0, count);
 
     let apiCalls = 1;
 
     // Enrich with thread metadata that search API doesn't provide
-    const enrichResult = await this.slack.enrichSearchMatches(searchResult.messages);
+    const enrichResult = await this.slack.enrichSearchMatches(visible);
     apiCalls += enrichResult.apiCalls;
 
     const seenThreads = new Set();
@@ -79,7 +84,8 @@ class SearchService {
 
     return {
       results,
-      total_matches: searchResult.total,
+      // For a scoped key, Slack's total would count matches it may not see, so report what we return.
+      total_matches: scoped ? visible.length : searchResult.total,
       query,
       api_calls_made: apiCalls,
     };

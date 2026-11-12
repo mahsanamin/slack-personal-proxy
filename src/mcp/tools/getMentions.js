@@ -1,7 +1,7 @@
 const { z } = require('zod');
 const logger = require('../../utils/logger');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_get_mentions',
     'Get all your recent @mentions across Slack. Optionally includes full thread context for each mention.',
@@ -14,7 +14,7 @@ function register(server, services) {
     async ({ count, include_threads }) => {
       try {
         const { mentionService } = services();
-        const result = await mentionService.getAllMentions(count, include_threads);
+        const result = await mentionService.getAllMentions(count, include_threads, access);
 
         const lines = [];
         lines.push(`# Mentions (${result.total_mentions} total)\n`);

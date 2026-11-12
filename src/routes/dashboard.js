@@ -38,6 +38,7 @@ router.post('/api/setup/slack', c.saveSlack);
 router.get('/api/keys', c.listKeys);
 router.post('/api/keys', c.createKey);
 router.delete('/api/keys/:id', c.revokeKey);
+router.get('/api/channels', c.listChannelsForKeys);
 
 router.get('/api/dm-allowlist', c.listDmUsers);
 router.post('/api/dm-allowlist', c.addDmUser);

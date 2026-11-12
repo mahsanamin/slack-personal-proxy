@@ -89,7 +89,8 @@ All routes are still behind the global IP allowlist.
 | POST | `/dashboard/api/setup/test` | session | `auth.test` provided Slack creds (no save) |
 | POST | `/dashboard/api/setup/slack` | session | Test then store Slack creds (encrypted), hot-reload |
 | GET | `/dashboard/api/keys` | session | List API keys (metadata only) |
-| POST | `/dashboard/api/keys` | session | Create a key (secret shown once) |
+| POST | `/dashboard/api/keys` | session | Create a key (secret shown once). Body: `label`, `access` (`read` default or `read_write`), `channels` (`"all"` or a non-empty list of channel IDs) |
+| GET | `/dashboard/api/channels` | session | Channels to choose from when creating a key (channels only, no DMs) |
 | DELETE | `/dashboard/api/keys/:id` | session | Revoke a key |
 | GET | `/dashboard/api/dm-allowlist` | session | List DM-allowed users |
 | GET | `/dashboard/slackp` | none | Download the dependency-free `slackp` CLI (still IP-allowlisted) |

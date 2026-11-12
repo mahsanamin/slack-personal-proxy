@@ -1,5 +1,6 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactThread } = require('../utils/compactThread');
+const { resolveAccess } = require('../services/keyAccess');
 
 async function getThreadsImIn(req, res, next) {
   try {
@@ -7,7 +8,7 @@ async function getThreadsImIn(req, res, next) {
     const count = parseInt(req.query.count, 10) || 20;
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await activityService.getThreadsImIn(count);
+    const result = await activityService.getThreadsImIn(count, resolveAccess(req.apiKey));
     const threads = verbose ? result.threads : result.threads.map(compactThread);
 
     res.json(formatSuccessResponse(
@@ -30,7 +31,7 @@ async function getMyThreads(req, res, next) {
     const includeReplies = parseBoolean(req.query.includeReplies, true);
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await activityService.getMyThreads(count, includeReplies);
+    const result = await activityService.getMyThreads(count, includeReplies, resolveAccess(req.apiKey));
     const threads = verbose ? result.threads : result.threads.map(compactThread);
 
     res.json(formatSuccessResponse(

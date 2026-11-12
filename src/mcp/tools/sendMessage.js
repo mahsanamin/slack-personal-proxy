@@ -1,8 +1,9 @@
 const { z } = require('zod');
 const config = require('../../config');
 const logger = require('../../utils/logger');
+const { assertWrite } = require('../../services/keyAccess');
 
-function register(server, services) {
+function register(server, services, access) {
   server.tool(
     'slack_send_message',
     'Send a message to a whitelisted Slack channel or DM, or reply in a thread. Requires ENABLE_WRITE_OPS=true and the channel/user must be in the whitelist.',
@@ -23,6 +24,7 @@ function register(server, services) {
           };
         }
 
+        assertWrite(access, channel_id);
         const { messageService } = services();
         const result = await messageService.sendMessage(channel_id, text, thread_ts || null);
 

@@ -3,6 +3,7 @@ const { ERROR_CODES } = require('../utils/constants');
 const { compactMessage } = require('../utils/compactThread');
 const config = require('../config');
 const configStore = require('../services/configStore');
+const { resolveAccess, assertDmSend } = require('../services/keyAccess');
 
 async function getMessageHistory(req, res, next) {
   try {
@@ -85,6 +86,8 @@ async function sendDirectMessage(req, res, next) {
       });
     }
 
+    assertDmSend(resolveAccess(req.apiKey));
+
     const { messageService } = req.services;
     const { target, text, thread_ts } = req.body;
     const result = await messageService.sendDirectMessage(target, text, thread_ts || null, req.apiKey && req.apiKey.id);
@@ -116,6 +119,8 @@ async function requestDirectMessage(req, res, next) {
         error: ERROR_CODES.DM_APPROVAL_STORAGE_UNAVAILABLE,
       });
     }
+    assertDmSend(resolveAccess(req.apiKey));
+
     const { whitelistService } = req.services;
     const { target, text, thread_ts } = req.body;
     const normalized = String(target || '').trim().replace(/^@/, '');

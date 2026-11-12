@@ -1,6 +1,7 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactMessage, compactContextResult } = require('../utils/compactThread');
 const { ERROR_CODES } = require('../utils/constants');
+const { resolveAccess, assertRead } = require('../services/keyAccess');
 
 function parsePermalink(url) {
   const match = url.match(/\/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/);
@@ -15,6 +16,8 @@ async function getThreadByPermalink(req, res, next) {
     if (!parsed) {
       throw { ...ERROR_CODES.INVALID_PERMALINK };
     }
+
+    assertRead(resolveAccess(req.apiKey), parsed.channelId);
 
     const { messageService } = req.services;
     const verbose = parseBoolean(req.query.verbose, false);

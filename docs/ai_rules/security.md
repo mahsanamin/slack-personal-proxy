@@ -18,7 +18,11 @@
 - Whitelist only gates **write operations** (sending messages).
 - If `ALLOWED_WRITE_CHANNELS` is empty, all channels are writable.
 - If `ALLOWED_DM_USERS` is empty, all DM users are allowed.
-- Read operations are never blocked — Slack handles read access by channel membership.
+- Read operations are not blocked by the global whitelist. Slack's own channel membership still applies.
+- **Per-key scope** (`src/services/keyAccess.js`): each key has `access` (`read` or `read_write`) and
+  `readChannels` (`null` for all channels, or a list of channel IDs). A selected-channel key reads only
+  those IDs, so it never sees DMs unless one is listed. Read-only keys cannot send, delete, or request DMs.
+  Keys created before scopes existed keep full access; revoke and recreate them to restrict them.
 
 ## HTTP Security
 
