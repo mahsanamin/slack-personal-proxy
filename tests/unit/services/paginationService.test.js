@@ -2,6 +2,7 @@ const PaginationService = require('../../../src/services/paginationService');
 
 jest.mock('../../../src/config', () => ({
   maxPaginationCalls: 10,
+  maxDirectoryPaginationCalls: 100,
   logLevel: 'error',
   nodeEnv: 'test',
 }));
@@ -109,5 +110,20 @@ describe('PaginationService', () => {
 
     expect(result.items).toEqual([{ id: 'U1', name: 'alice' }]);
     expect(mockSlackClient.listUsers).toHaveBeenCalled();
+  });
+
+  test('directory fetch (channels) reads past the message page cap', async () => {
+    let calls = 0;
+    const slackClient = {
+      listChannels: async (cursor) => {
+        calls++;
+        if (calls < 25) return { channels: [{ id: 'C' + calls }], next_cursor: 'next' };
+        return { channels: [{ id: 'CLAST' }], next_cursor: '' };
+      },
+    };
+    const result = await pagination.fetchAllChannels(slackClient);
+    expect(result.items).toHaveLength(25);
+    expect(result.items[24].id).toBe('CLAST');
+    expect(result.truncated).toBe(false);
   });
 });

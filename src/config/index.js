@@ -65,6 +65,8 @@ const config = Object.freeze({
 
   // Pagination
   maxPaginationCalls: parseInt_(process.env.MAX_PAGINATION_CALLS, 10),
+  // Channel and user directories need far more pages than messages do (200 per page).
+  maxDirectoryPaginationCalls: parseInt_(process.env.MAX_DIRECTORY_PAGINATION_CALLS, 100),
 
   // Whitelist
   whitelist: Object.freeze({

@@ -428,6 +428,38 @@ function channelPicker() {
   const filter = el('input', { type: 'text', placeholder: 'Filter channels' });
   const count = el('span', { class: 'muted', text: '0 selected' });
   const list = el('div', { class: 'pick-list' });
+  const bulk = el('textarea', { placeholder: 'Paste channel names: #product-hajj-umrah, #hajj-umrah-core or one per line' });
+  const bulkNote = el('div', { class: 'muted', style: 'margin-top:6px' });
+
+  function updateCount() { count.textContent = chosen.size + ' selected'; }
+
+  // Splits pasted text on commas, spaces, semicolons and new lines; strips a leading #.
+  function parseNames(text) {
+    return [...new Set(String(text || '')
+      .split(/[\s,;]+/)
+      .map((n) => n.trim().replace(/^#/, '').toLowerCase())
+      .filter(Boolean))];
+  }
+
+  async function selectPasted() {
+    await load();
+    if (!loaded) return;
+    const byName = new Map(channels.map((c) => [c.name.toLowerCase(), c.id]));
+    const names = parseNames(bulk.value);
+    const missing = [];
+    let matched = 0;
+    for (const name of names) {
+      const id = byName.get(name);
+      if (id) { chosen.add(id); matched++; } else missing.push(name);
+    }
+    updateCount();
+    render();
+    clear(bulkNote);
+    bulkNote.appendChild(el('span', { text: 'Selected ' + matched + ' of ' + names.length + '.' }));
+    if (missing.length) {
+      bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px', text: 'Not found (check spelling, or that you are a member): ' + missing.map((n) => '#' + n).join(', ') }));
+    }
+  }
 
   function render() {
     clear(list);
@@ -458,6 +490,12 @@ function channelPicker() {
       const d = await api('/api/channels');
       channels = d.channels || [];
       loaded = true;
+      if (d.truncated) {
+        list.parentNode && list.parentNode.insertBefore(
+          el('div', { class: 'notice err', text: 'Slack returned more channels than the proxy can list. Some channels are missing; raise MAX_DIRECTORY_PAGINATION_CALLS.' }),
+          list
+        );
+      }
     } catch (err) {
       clear(list);
       list.appendChild(el('div', { class: 'notice err', text: 'Could not load channels: ' + err.message }));
@@ -468,7 +506,14 @@ function channelPicker() {
 
   filter.addEventListener('input', render);
   return {
-    node: el('div', {}, [el('div', { class: 'row' }, [filter, count]), list]),
+    node: el('div', {}, [
+      el('label', { text: 'Paste channel names' }),
+      bulk,
+      el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Select these channels', onclick: selectPasted })]),
+      bulkNote,
+      el('div', { class: 'row', style: 'margin-top:10px' }, [filter, count]),
+      list,
+    ]),
     load,
     selected: () => [...chosen],
   };

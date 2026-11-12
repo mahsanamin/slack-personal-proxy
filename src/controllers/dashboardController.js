@@ -226,7 +226,7 @@ async function listChannelsForKeys(req, res, next) {
       is_archived: Boolean(c.is_archived),
       member_count: c.member_count || 0,
     }));
-    res.json(formatSuccessResponse({ channels }));
+    res.json(formatSuccessResponse({ channels, truncated: Boolean(result.truncated) }));
   } catch (err) {
     next(err);
   }

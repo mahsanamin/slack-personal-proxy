@@ -43,6 +43,8 @@ class ChannelService {
     const data = {
       channels,
       total_count: channels.length,
+      // True when the workspace has more channels than the directory page cap allows.
+      truncated: Boolean(result.truncated),
       api_calls_made: result.api_calls,
     };
 

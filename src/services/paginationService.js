@@ -43,11 +43,12 @@ class PaginationService {
 
   async fetchAllChannels(slackClient, maxCalls = null) {
     const apiFn = async ({ cursor }) => slackClient.listChannels(cursor);
-    return this.fetchAll(apiFn, maxCalls);
+    return this.fetchAll(apiFn, maxCalls || config.maxDirectoryPaginationCalls);
   }
 
   async fetchAllUsers(slackClient, maxCalls = null) {
     const apiFn = async ({ cursor }) => slackClient.listUsers(cursor);
+    maxCalls = maxCalls || config.maxDirectoryPaginationCalls;
     return this.fetchAll(apiFn, maxCalls);
   }
 

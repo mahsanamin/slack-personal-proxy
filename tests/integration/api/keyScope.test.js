@@ -268,6 +268,33 @@ describe('per-key channel scope (HTTP)', () => {
       expect(res.body.meta.total_mentions).toBe(1);
     });
 
+    test('mention counts per channel never name channels outside the key', async () => {
+      const res = await request(app).get('/api/mentions/all').query({ count: 10, includeThreads: false }).set('X-API-Key', READ);
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body.data.grouped_by_channel)).toEqual(['general-ish']);
+      expect(JSON.stringify(res.body)).not.toContain('secret-project');
+      expect(JSON.stringify(res.body)).not.toContain(OTHER_CHANNEL);
+      expect(JSON.stringify(res.body)).not.toContain(DM_CHANNEL);
+    });
+
+    test('no key-reachable response leaks another channel id or name', async () => {
+      const checks = [
+        request(app).get('/api/search/messages').query({ query: 'in', count: 10, verbose: true }).set('X-API-Key', READ),
+        request(app).get('/api/mentions/all').query({ count: 10, verbose: true }).set('X-API-Key', READ),
+        request(app).get('/api/mentions/threads').query({ count: 10 }).set('X-API-Key', READ),
+        request(app).get('/api/activity/threads-im-in').query({ count: 10, verbose: true }).set('X-API-Key', READ),
+        request(app).get('/api/activity/my-threads').query({ count: 10, verbose: true }).set('X-API-Key', READ),
+        request(app).get('/api/channels').set('X-API-Key', READ),
+        request(app).get('/api/auth/test').set('X-API-Key', READ),
+      ];
+      for (const res of await Promise.all(checks)) {
+        const body = JSON.stringify(res.body);
+        expect(body).not.toContain(OTHER_CHANNEL);
+        expect(body).not.toContain(DM_CHANNEL);
+        expect(body).not.toContain('secret-project');
+      }
+    });
+
     test('mentions by channel refuse a channel outside the key scope', async () => {
       const res = await request(app).get(`/api/mentions/by-channel/${OTHER_CHANNEL}`).set('X-API-Key', READ);
       expect(res.status).toBe(403);
