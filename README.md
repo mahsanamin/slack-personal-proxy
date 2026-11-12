@@ -7,6 +7,23 @@ Slack Personal Proxy runs on your own machine, stays private behind Tailscale, a
 each client a separate key you can revoke at any time. Humans use a simple dashboard;
 agents use the `slackp` command and receive predictable JSON.
 
+## At a glance
+
+- **Read Slack without creating a Slack app.** No app review, no workspace admin approval,
+  and no bot to invite into channels. It uses your own signed-in session, so it sees what you see.
+- **Limit each key to the channels it needs.** Give an agent read access to a few public
+  channels, and it cannot see your DMs or anything else. Keys can be read only, or read and write.
+- **Built for AI agents.** A `slackp` command returns predictable JSON, and an MCP endpoint
+  exposes the same reads to MCP-capable tools.
+- **Writes stay with you.** Channel and DM allowlists apply, and a DM to someone not on the list
+  waits for your approval in the dashboard.
+- **Your data stays on your machine.** The proxy runs on your own server, behind Tailscale,
+  with your Slack connection encrypted at rest.
+
+Trade-off to know: it works with your personal session, not a bot token. Treat its keys and
+dashboard password like your Slack password. Slack may not allow this kind of access, and that
+is a choice you make for yourself.
+
 ## Why this exists
 
 AI agents are good at searching conversations, catching up on mentions, and drafting
