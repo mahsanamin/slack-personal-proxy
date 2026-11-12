@@ -19,11 +19,25 @@ function sessionMaxAgeMs(remember) {
   return (d.sessionTtlMin || 120) * 60000;
 }
 
-function issue(user, { remember = false } = {}) {
-  return signSession(
-    { u: user, r: Boolean(remember), exp: Date.now() + sessionMaxAgeMs(remember) },
-    sessionSecret()
-  );
+// A remembered session can never outlive this many days after the original sign-in,
+// however often it is renewed. Renewal keeps active use signed in; this cap limits how
+// long a copied cookie stays usable.
+function absoluteMaxAgeMs(remember) {
+  return sessionMaxAgeMs(remember);
+}
+
+// iat is the time of the original sign-in. Renewals pass it through unchanged.
+function issue(user, { remember = false, iat = null } = {}) {
+  const now = Date.now();
+  const start = iat || now;
+  const exp = Math.min(now + sessionMaxAgeMs(remember), start + absoluteMaxAgeMs(remember));
+  return signSession({ u: user, r: Boolean(remember), iat: start, exp }, sessionSecret());
+}
+
+// Renew only when at least half the lifetime has passed, so fewer valid tokens circulate.
+function needsRenewal(session) {
+  const remaining = session.exp - Date.now();
+  return remaining < sessionMaxAgeMs(session.r) / 2;
 }
 
 function cookieOptions(remember = false) {
@@ -39,6 +53,7 @@ function cookieOptions(remember = false) {
 function read(token) {
   const s = verifySession(token, sessionSecret());
   if (!s || !s.exp || s.exp < Date.now()) return null;
+  if (s.r && (!s.iat || Date.now() - s.iat > absoluteMaxAgeMs(true))) return null;
   return s;
 }
 
@@ -54,4 +69,4 @@ function readCookie(req, name) {
   return null;
 }
 
-module.exports = { COOKIE, sessionSecret, issue, read, readCookie, cookieOptions };
+module.exports = { COOKIE, sessionSecret, issue, read, readCookie, cookieOptions, needsRenewal };

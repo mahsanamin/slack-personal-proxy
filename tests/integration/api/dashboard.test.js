@@ -146,13 +146,32 @@ describe('Dashboard API', () => {
     expect(normal.headers['set-cookie'][0]).toContain('Max-Age=7200');
   });
 
-  test('a remembered session is renewed on use, so active users stay signed in', async () => {
+  test('a fresh remembered session is not renewed on every request', async () => {
     const login = await request(app).post('/dashboard/login').send({ user: 'admin', password: 's3cret-pass', remember: true });
     const cookie = login.headers['set-cookie'][0].split(';')[0];
     const res = await request(app).get('/dashboard/api/status').set('Cookie', cookie);
     expect(res.status).toBe(200);
-    // The response carries a fresh cookie with the long lifetime again.
-    expect(res.headers['set-cookie'][0]).toContain('Max-Age=2592000');
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  test('a remembered session past half its life is renewed, keeping the original sign-in time', async () => {
+    const { issue } = require('../../../src/utils/dashboardSession');
+    const day = 24 * 60 * 60000;
+    const iat = Date.now() - 20 * day; // signed in 20 days ago: 10 days of life left
+    const token = issue('admin', { remember: true, iat });
+    const res = await request(app).get('/dashboard/api/status').set('Cookie', 'sp_session=' + token);
+    expect(res.status).toBe(200);
+    const renewed = res.headers['set-cookie'][0];
+    expect(renewed).toContain('Max-Age=2592000');
+    expect(renewed).toContain('sp_session=');
+  });
+
+  test('a remembered session is refused after 30 days from the original sign-in, even if renewed', async () => {
+    const { issue } = require('../../../src/utils/dashboardSession');
+    const day = 24 * 60 * 60000;
+    const token = issue('admin', { remember: true, iat: Date.now() - 31 * day });
+    const res = await request(app).get('/dashboard/api/status').set('Cookie', 'sp_session=' + token);
+    expect(res.status).toBe(401);
   });
 
   test('login rejects a bad password', async () => {
