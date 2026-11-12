@@ -9,8 +9,8 @@ const logger = require('../utils/logger');
  * just means there is no saved list.
  */
 class ChannelListStore {
-  constructor(dataDir) {
-    this.file = path.join(path.resolve(process.cwd(), dataDir || 'data'), 'channel-list.json');
+  constructor(dataDir, fileName = 'channel-list.json') {
+    this.file = path.join(path.resolve(process.cwd(), dataDir || 'data'), fileName);
   }
 
   read() {

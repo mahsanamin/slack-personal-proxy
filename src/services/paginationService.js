@@ -46,6 +46,12 @@ class PaginationService {
     return this.fetchAll(apiFn, maxCalls || config.maxDirectoryPaginationCalls);
   }
 
+  // Channels the Slack account belongs to. A handful of calls, not a workspace crawl.
+  async fetchMemberChannels(slackClient, maxCalls = null) {
+    const apiFn = async ({ cursor }) => slackClient.listMemberChannels(cursor);
+    return this.fetchAll(apiFn, maxCalls || config.maxDirectoryPaginationCalls);
+  }
+
   async fetchAllUsers(slackClient, maxCalls = null) {
     const apiFn = async ({ cursor }) => slackClient.listUsers(cursor);
     maxCalls = maxCalls || config.maxDirectoryPaginationCalls;

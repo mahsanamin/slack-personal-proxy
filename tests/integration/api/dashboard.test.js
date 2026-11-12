@@ -36,12 +36,24 @@ function buildApp() {
     },
     mentionService: { getAllMentions: async () => ({ mentions: [] }), getMentionThreads: async () => ({ threads: [] }) },
     channelService: {
-      listChannels: async () => ({
+      listMemberChannels: async () => ({
+        fetched_at: Date.now(),
         channels: [
           { id: 'C0AAAAAAA1', name: 'general', is_private: false, is_archived: false, member_count: 4 },
           { id: 'C0BBBBBBB2', name: 'secret', is_private: true, is_archived: false, member_count: 2 },
         ],
       }),
+      // The saved full workspace list also holds a public channel the account has not joined.
+      peekChannelList: () => ({
+        fresh: true,
+        fetched_at: Date.now(),
+        channels: [
+          { id: 'C0AAAAAAA1', name: 'general', is_private: false },
+          { id: 'C0CCCCCCC3', name: 'random', is_private: false },
+        ],
+      }),
+      warmChannelList: () => {},
+      isFullListLoading: () => false,
     },
     activityService: { getThreadsImIn: async () => ({ threads: [] }), getMyThreads: async () => ({ threads: [] }) },
     whitelistService: {
@@ -238,8 +250,12 @@ describe('Dashboard API', () => {
     test('channel picker lists channels only, for choosing key scope', async () => {
       const res = await agent.get('/dashboard/api/channels');
       expect(res.status).toBe(200);
-      expect(res.body.data.channels.map((c) => c.name)).toEqual(['general', 'secret']);
-      expect(res.body.data.channels[1].is_private).toBe(true);
+      expect(res.body.data.channels.map((c) => c.name)).toEqual(['general', 'random', 'secret']);
+      expect(res.body.data.channels.find((c) => c.name === 'secret').is_private).toBe(true);
+      // Channels the account is in come first-class; others are marked as not joined.
+      expect(res.body.data.channels.find((c) => c.name === 'general').is_member).toBe(true);
+      expect(res.body.data.channels.find((c) => c.name === 'random').is_member).toBe(false);
+      expect(res.body.data.full_ready).toBe(true);
     });
 
     test('API key: create (shown once) → verifiable → revoke → rejected', async () => {

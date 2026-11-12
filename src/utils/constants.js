@@ -37,6 +37,7 @@ const ERROR_CODES = Object.freeze({
 
 const CACHE_PREFIXES = Object.freeze({
   CHANNEL_LIST: 'channels:list',
+  MEMBER_CHANNEL_LIST: 'channels:member-list',
   CHANNEL_INFO: 'channels:info:',
   USER_LIST: 'users:list',
   USER_PROFILE: 'users:profile:',

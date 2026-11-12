@@ -427,12 +427,15 @@ function channelPicker() {
   const chosen = new Set();
   let channels = [];
   let loaded = false;
+  let fullReady = false;
   const filter = el('input', { type: 'text', placeholder: 'Filter channels' });
   const count = el('span', { class: 'muted', text: '0 selected' });
   const list = el('div', { class: 'pick-list' });
   const bulk = el('textarea', { placeholder: 'Paste channel names: #product-hajj-umrah, #hajj-umrah-core or one per line' });
   const bulkNote = el('div', { class: 'muted', style: 'margin-top:6px' });
   const info = el('span', { class: 'muted' });
+  const fullNote = el('div', { class: 'muted', style: 'margin-top:6px' });
+  let pollTimer = null;
   const refreshBtn = el('button', { class: 'secondary small', text: 'Refresh channels', onclick: () => refresh() });
 
   function updateCount() { count.textContent = chosen.size + ' selected'; }
@@ -461,7 +464,7 @@ function channelPicker() {
     clear(bulkNote);
     bulkNote.appendChild(el('span', { text: 'Selected ' + matched + ' of ' + names.length + '.' }));
     if (missing.length) {
-      bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px', text: 'Not found (check spelling, or that you are a member): ' + missing.map((n) => '#' + n).join(', ') }));
+      bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px', text: (fullReady ? 'Not found (check spelling): ' : 'Not found yet (check spelling; channels you have not joined appear once the background list finishes): ') + missing.map((n) => '#' + n).join(', ') }));
     }
   }
 
@@ -470,7 +473,7 @@ function channelPicker() {
     const q = filter.value.trim().toLowerCase();
     const shown = channels.filter((c) => !q || c.name.toLowerCase().includes(q));
     if (!shown.length) {
-      list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels… the first load can take a few minutes if Slack is rate limiting. Later loads use a saved list.' : 'No channels match.' }));
+      list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels…' : 'No channels match.' }));
       return;
     }
     for (const c of shown) {
@@ -484,6 +487,7 @@ function channelPicker() {
         box,
         el('span', { text: ' #' + c.name }),
         c.is_private ? el('span', { class: 'muted', text: ' private' }) : null,
+        c.is_member === false ? el('span', { class: 'muted', text: ' not joined' }) : null,
       ]));
     }
   }
@@ -498,13 +502,30 @@ function channelPicker() {
   function apply(d) {
     channels = d.channels || [];
     loaded = true;
+    fullReady = Boolean(d.full_ready);
     info.textContent = describeAge(d);
+    clear(fullNote);
+    if (!fullReady) {
+      fullNote.textContent = 'Showing the channels you are in. Public channels you have not joined are still being listed in the background (a few minutes). They appear here by themselves.';
+    }
     if (d.truncated) {
       list.parentNode && list.parentNode.insertBefore(
         el('div', { class: 'notice err', text: 'Slack returned more channels than the proxy can list. Some channels are missing; raise MAX_DIRECTORY_PAGINATION_CALLS.' }),
         list
       );
     }
+    schedulePoll();
+  }
+
+  // While the full workspace list is still building, check the proxy every 20 seconds.
+  // This only reads what the proxy already has, so it does not call Slack.
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    if (fullReady || !list.isConnected) return;
+    pollTimer = setTimeout(async () => {
+      if (!list.isConnected) return;
+      try { apply(await api('/api/channels')); render(); } catch { schedulePoll(); }
+    }, 20000);
   }
 
   async function fetchChannels(path, opts) {
@@ -541,6 +562,7 @@ function channelPicker() {
       bulkNote,
       el('div', { class: 'row', style: 'margin-top:10px' }, [filter, count]),
       el('div', { class: 'row', style: 'margin-top:6px' }, [refreshBtn, info]),
+      fullNote,
       list,
     ]),
     load,

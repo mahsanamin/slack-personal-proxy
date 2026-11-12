@@ -228,7 +228,7 @@ async function start() {
     }
 
     // Build higher-level services
-    const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService, new ChannelListStore(config.dataDir));
+    const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService, new ChannelListStore(config.dataDir), new ChannelListStore(config.dataDir, 'channel-member-list.json'));
     const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService, persistentCacheService);
     const userService = new UserService(slackClient, cacheService, paginationService);
     const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);

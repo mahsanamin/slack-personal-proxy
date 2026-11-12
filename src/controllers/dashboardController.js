@@ -207,23 +207,48 @@ function revokeKey(req, res) {
 
 // Channels offered when creating a key. Public and private channels only: direct
 // messages and group DMs are never listed, so they cannot be picked by accident.
-// The list comes from the saved copy (12 hours by default). refresh asks Slack again.
+// The picker starts from the channels the account is in (fast to get from Slack). The
+// full workspace list is built in the background and merged in when it is ready, so
+// public channels the account has not joined show up later. refresh asks Slack again.
 function channelsHandler(refresh) {
   return async (req, res, next) => {
     try {
-      const result = await req.services.channelService.listChannels(FULL_ACCESS, { refresh });
-      const channels = result.channels.map((c) => ({
-        id: c.id,
-        name: c.name,
-        is_private: Boolean(c.is_private),
-        is_archived: Boolean(c.is_archived),
-        member_count: c.member_count || 0,
-      }));
+      const svc = req.services.channelService;
+      const full = svc.peekChannelList();
+
+      let members = null;
+      try {
+        members = await svc.listMemberChannels({ refresh });
+      } catch (err) {
+        // Slack failed. A saved full list can still fill the picker.
+        if (!full) throw err;
+        logger.warn(`Member channel list failed (${err.message}); using the saved full list`);
+      }
+
+      svc.warmChannelList({ force: refresh });
+
+      const byId = new Map();
+      for (const c of (members ? members.channels : [])) byId.set(c.id, { ...c, is_member: true });
+      for (const c of (full ? full.channels : [])) if (!byId.has(c.id)) byId.set(c.id, { ...c, is_member: false });
+
+      const channels = [...byId.values()]
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          is_private: Boolean(c.is_private),
+          is_archived: Boolean(c.is_archived),
+          member_count: c.member_count || 0,
+          is_member: c.is_member,
+        }))
+        .sort((x, y) => x.name.localeCompare(y.name));
+
       res.json(formatSuccessResponse({
         channels,
-        truncated: Boolean(result.truncated),
-        fetched_at: result.fetched_at || null,
-        stale: Boolean(result.stale),
+        truncated: Boolean(full && full.truncated),
+        fetched_at: (members || full).fetched_at || null,
+        stale: Boolean((members && members.stale) || (!members && full)),
+        full_ready: Boolean(full && full.fresh),
+        full_loading: svc.isFullListLoading(),
       }));
     } catch (err) {
       next(err);

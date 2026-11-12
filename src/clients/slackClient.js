@@ -253,6 +253,21 @@ class SlackClient {
     });
   }
 
+  // users.conversations: only the channels the signed-in account is in. Its Slack limit is
+  // higher than conversations.list, and the result is far smaller.
+  async listMemberChannels(cursor = null, types = 'public_channel,private_channel') {
+    return this._throttle(async () => {
+      const params = { types, exclude_archived: true, limit: 200 };
+      if (cursor) params.cursor = cursor;
+
+      const result = await this.client.users.conversations(params);
+      return {
+        channels: result.channels || [],
+        next_cursor: result.response_metadata?.next_cursor || null,
+      };
+    });
+  }
+
   async listUsers(cursor = null) {
     return this._throttle(async () => {
       const params = { limit: 200 };
