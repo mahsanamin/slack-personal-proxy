@@ -59,6 +59,8 @@ const config = Object.freeze({
   enableCaching: parseBoolean(process.env.ENABLE_CACHING, true),
   cache: Object.freeze({
     channelTtl: parseInt_(process.env.CHANNEL_CACHE_TTL_SECONDS, 300),
+    // The full workspace channel list changes rarely and is costly to rebuild: 12 hours.
+    channelListTtl: parseInt_(process.env.CHANNEL_LIST_TTL_SECONDS, 43200),
     userTtl: parseInt_(process.env.USER_CACHE_TTL_SECONDS, 300),
     threadTtl: parseInt_(process.env.THREAD_CACHE_TTL_SECONDS, 120),
     healthTtl: parseInt_(process.env.HEALTH_CACHE_TTL_SECONDS, 300),

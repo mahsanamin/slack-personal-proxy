@@ -26,6 +26,7 @@ const CacheService = require('./services/cacheService');
 const PaginationService = require('./services/paginationService');
 const WhitelistService = require('./services/whitelistService');
 const ChannelService = require('./services/channelService');
+const ChannelListStore = require('./services/channelListStore');
 const MessageService = require('./services/messageService');
 const UserService = require('./services/userService');
 const SearchService = require('./services/searchService');
@@ -227,7 +228,7 @@ async function start() {
     }
 
     // Build higher-level services
-    const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService);
+    const channelService = new ChannelService(slackClient, cacheService, paginationService, whitelistService, new ChannelListStore(config.dataDir));
     const messageService = new MessageService(slackClient, cacheService, paginationService, whitelistService, persistentCacheService);
     const userService = new UserService(slackClient, cacheService, paginationService);
     const searchService = new SearchService(slackClient, cacheService, messageService, whitelistService);

@@ -207,21 +207,32 @@ function revokeKey(req, res) {
 
 // Channels offered when creating a key. Public and private channels only: direct
 // messages and group DMs are never listed, so they cannot be picked by accident.
-async function listChannelsForKeys(req, res, next) {
-  try {
-    const result = await req.services.channelService.listChannels(FULL_ACCESS);
-    const channels = result.channels.map((c) => ({
-      id: c.id,
-      name: c.name,
-      is_private: Boolean(c.is_private),
-      is_archived: Boolean(c.is_archived),
-      member_count: c.member_count || 0,
-    }));
-    res.json(formatSuccessResponse({ channels, truncated: Boolean(result.truncated) }));
-  } catch (err) {
-    next(err);
-  }
+// The list comes from the saved copy (12 hours by default). refresh asks Slack again.
+function channelsHandler(refresh) {
+  return async (req, res, next) => {
+    try {
+      const result = await req.services.channelService.listChannels(FULL_ACCESS, { refresh });
+      const channels = result.channels.map((c) => ({
+        id: c.id,
+        name: c.name,
+        is_private: Boolean(c.is_private),
+        is_archived: Boolean(c.is_archived),
+        member_count: c.member_count || 0,
+      }));
+      res.json(formatSuccessResponse({
+        channels,
+        truncated: Boolean(result.truncated),
+        fetched_at: result.fetched_at || null,
+        stale: Boolean(result.stale),
+      }));
+    } catch (err) {
+      next(err);
+    }
+  };
 }
+
+const listChannelsForKeys = channelsHandler(false);
+const refreshChannelsForKeys = channelsHandler(true);
 
 // --- DM allowlist ---
 
@@ -447,7 +458,7 @@ async function summary(req, res, next) {
 module.exports = {
   login, logout, bootstrap, status,
   testSlack, saveSlack,
-  listKeys, createKey, revokeKey, listChannelsForKeys,
+  listKeys, createKey, revokeKey, listChannelsForKeys, refreshChannelsForKeys,
   listDmUsers, addDmUser, removeDmUser,
   listDmApprovals, decideDmApproval,
   summary,

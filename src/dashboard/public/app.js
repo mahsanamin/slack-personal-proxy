@@ -432,6 +432,8 @@ function channelPicker() {
   const list = el('div', { class: 'pick-list' });
   const bulk = el('textarea', { placeholder: 'Paste channel names: #product-hajj-umrah, #hajj-umrah-core or one per line' });
   const bulkNote = el('div', { class: 'muted', style: 'margin-top:6px' });
+  const info = el('span', { class: 'muted' });
+  const refreshBtn = el('button', { class: 'secondary small', text: 'Refresh channels', onclick: () => refresh() });
 
   function updateCount() { count.textContent = chosen.size + ' selected'; }
 
@@ -468,7 +470,7 @@ function channelPicker() {
     const q = filter.value.trim().toLowerCase();
     const shown = channels.filter((c) => !q || c.name.toLowerCase().includes(q));
     if (!shown.length) {
-      list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels…' : 'No channels match.' }));
+      list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels… the first load can take a few minutes if Slack is rate limiting. Later loads use a saved list.' : 'No channels match.' }));
       return;
     }
     for (const c of shown) {
@@ -486,24 +488,48 @@ function channelPicker() {
     }
   }
 
-  async function load() {
-    if (loaded) return;
+  function describeAge(d) {
+    if (!d.fetched_at) return '';
+    const mins = Math.max(0, Math.round((Date.now() - d.fetched_at) / 60000));
+    const age = mins < 60 ? mins + ' min' : Math.round(mins / 60) + ' h';
+    return 'Channel list saved ' + age + ' ago' + (d.stale ? ' (Slack did not answer, showing the older list)' : '') + '.';
+  }
+
+  function apply(d) {
+    channels = d.channels || [];
+    loaded = true;
+    info.textContent = describeAge(d);
+    if (d.truncated) {
+      list.parentNode && list.parentNode.insertBefore(
+        el('div', { class: 'notice err', text: 'Slack returned more channels than the proxy can list. Some channels are missing; raise MAX_DIRECTORY_PAGINATION_CALLS.' }),
+        list
+      );
+    }
+  }
+
+  async function fetchChannels(path, opts) {
     try {
-      const d = await api('/api/channels');
-      channels = d.channels || [];
-      loaded = true;
-      if (d.truncated) {
-        list.parentNode && list.parentNode.insertBefore(
-          el('div', { class: 'notice err', text: 'Slack returned more channels than the proxy can list. Some channels are missing; raise MAX_DIRECTORY_PAGINATION_CALLS.' }),
-          list
-        );
-      }
+      apply(await api(path, opts));
     } catch (err) {
       clear(list);
       list.appendChild(el('div', { class: 'notice err', text: 'Could not load channels: ' + err.message }));
-      return;
+      return false;
     }
     render();
+    return true;
+  }
+
+  async function load() {
+    if (loaded) return;
+    await fetchChannels('/api/channels');
+  }
+
+  // Asks Slack again. Slow when Slack is rate limiting, so the button is disabled meanwhile.
+  async function refresh() {
+    refreshBtn.disabled = true;
+    info.textContent = 'Asking Slack for the channel list…';
+    await fetchChannels('/api/channels/refresh', { method: 'POST' });
+    refreshBtn.disabled = false;
   }
 
   filter.addEventListener('input', render);
@@ -514,6 +540,7 @@ function channelPicker() {
       el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Select these channels', onclick: selectPasted })]),
       bulkNote,
       el('div', { class: 'row', style: 'margin-top:10px' }, [filter, count]),
+      el('div', { class: 'row', style: 'margin-top:6px' }, [refreshBtn, info]),
       list,
     ]),
     load,

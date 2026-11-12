@@ -41,7 +41,8 @@ All config is loaded from environment variables (`.env` file). See `.env.example
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ENABLE_CACHING` | `true` | Toggle in-memory cache |
-| `CHANNEL_CACHE_TTL_SECONDS` | `300` | Channel list/info TTL |
+| `CHANNEL_CACHE_TTL_SECONDS` | `300` | Single channel info TTL |
+| `CHANNEL_LIST_TTL_SECONDS` | `43200` | Full channel list TTL. Saved to `data/channel-list.json`, so it survives restarts. The dashboard has a Refresh button to rebuild it sooner |
 | `USER_CACHE_TTL_SECONDS` | `300` | User list/profile TTL |
 | `THREAD_CACHE_TTL_SECONDS` | `120` | Thread data TTL |
 | `HEALTH_CACHE_TTL_SECONDS` | `300` | Health check TTL |
