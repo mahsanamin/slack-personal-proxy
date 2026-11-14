@@ -55,6 +55,9 @@ const config = Object.freeze({
   // Slack API throttle (min ms between Slack API calls to avoid 429s)
   slackThrottleMs: parseInt_(process.env.SLACK_THROTTLE_MS, 100),
 
+  // Longest a mention/thread request may run before it returns what it has (partial).
+  requestBudgetMs: parseInt_(process.env.REQUEST_BUDGET_SECONDS, 20) * 1000,
+
   // Caching
   enableCaching: parseBoolean(process.env.ENABLE_CACHING, true),
   cache: Object.freeze({
@@ -64,6 +67,8 @@ const config = Object.freeze({
     userTtl: parseInt_(process.env.USER_CACHE_TTL_SECONDS, 300),
     threadTtl: parseInt_(process.env.THREAD_CACHE_TTL_SECONDS, 120),
     healthTtl: parseInt_(process.env.HEALTH_CACHE_TTL_SECONDS, 300),
+    // How long mention/thread/activity answers are reused for the same question.
+    activityTtl: parseInt_(process.env.ACTIVITY_CACHE_TTL_SECONDS, 45),
   }),
 
   // Pagination

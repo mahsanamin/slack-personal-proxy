@@ -1,3 +1,4 @@
+const config = require('../config');
 const logger = require('../utils/logger');
 const { isScoped, filterMatches } = require('./keyAccess');
 
@@ -14,6 +15,9 @@ class MentionService {
     const query = `<@${userId}>`;
 
     logger.info(`Fetching mentions for ${userId} (count=${count}, threads=${includeThreads})`);
+
+    const deadline = Date.now() + config.requestBudgetMs;
+    let partial = false;
 
     const scoped = isScoped(access);
     const searchResult = await this.slack.searchMessages(query, scoped ? 100 : count, 1, 'timestamp', 'desc');
@@ -47,7 +51,10 @@ class MentionService {
         created_at: match.ts ? new Date(parseFloat(match.ts) * 1000).toISOString() : null,
       };
 
-      if (includeThreads && isThreadReply && channelId && match.thread_ts) {
+      if (includeThreads && isThreadReply && channelId && match.thread_ts && Date.now() >= deadline) {
+        // Out of time: keep the mention, skip its thread.
+        partial = true;
+      } else if (includeThreads && isThreadReply && channelId && match.thread_ts) {
         try {
           const threadData = await this.messageService.getCompleteThread(channelId, match.thread_ts);
           apiCalls += threadData.api_calls_made || 0;
@@ -75,6 +82,7 @@ class MentionService {
       grouped_by_channel: channelCounts,
       total_mentions: scoped ? visible.length : searchResult.total,
       api_calls_made: apiCalls,
+      partial,
     };
   }
 
@@ -83,6 +91,9 @@ class MentionService {
     const query = `<@${userId}>`;
 
     logger.info(`Fetching mention threads for ${userId} (count=${count})`);
+
+    const deadline = Date.now() + config.requestBudgetMs;
+    let partial = false;
 
     const scoped = isScoped(access);
     const searchResult = await this.slack.searchMessages(query, scoped ? 100 : count, 1, 'timestamp', 'desc');
@@ -119,6 +130,7 @@ class MentionService {
 
     const threads = [];
     for (const [, thread] of seenThreads) {
+      if (Date.now() >= deadline) { partial = true; break; }
       try {
         const threadData = await this.messageService.getCompleteThread(
           thread.channel_id, thread.thread_ts
@@ -161,6 +173,7 @@ class MentionService {
       threads,
       total_threads: threads.length,
       api_calls_made: apiCalls,
+      partial,
     };
   }
 

@@ -187,6 +187,8 @@ slackp approval REQUEST_ID
 Without `--yes`, `slackp` asks for confirmation interactively. Agents should use `--yes`
 only when the user has authorized the exact write.
 
+**Building something that polls?** Read the [consumer guide](src/guide/consumer-guide.md) first (also `slackp guide` or `GET /guide`). It says which calls are cheap and how to avoid Slack rate limits.
+
 ## Dashboard guide
 
 - **Overview** — recent mentions and active threads.

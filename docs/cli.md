@@ -27,6 +27,9 @@ The connection is tested before it is saved. Profiles and keys are stored in
 `~/.config/slackp/config.json` with mode `0600`. Create a separate dashboard key for
 each machine so access can be revoked independently.
 
+Run `slackp guide` to print the guide on using the proxy without causing Slack rate limits
+(also served at `/guide` on the proxy). Read it before polling anything.
+
 Named profiles support more than one proxy or identity:
 
 ```bash

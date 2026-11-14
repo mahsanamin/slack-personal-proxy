@@ -43,6 +43,8 @@ All config is loaded from environment variables (`.env` file). See `.env.example
 | `ENABLE_CACHING` | `true` | Toggle in-memory cache |
 | `CHANNEL_CACHE_TTL_SECONDS` | `300` | Single channel info TTL |
 | `CHANNEL_LIST_TTL_SECONDS` | `43200` | Full channel list TTL. Saved to `data/channel-list.json`, so it survives restarts. The dashboard has a Refresh button to rebuild it sooner |
+| `ACTIVITY_CACHE_TTL_SECONDS` | `45` | How long the same mention/thread/activity request is answered from the saved result. `0` turns reuse off |
+| `REQUEST_BUDGET_SECONDS` | `20` | A mention/activity request stops starting new thread fetches after this long and returns a `partial` answer |
 | `USER_CACHE_TTL_SECONDS` | `300` | User list/profile TTL |
 | `THREAD_CACHE_TTL_SECONDS` | `120` | Thread data TTL |
 | `HEALTH_CACHE_TTL_SECONDS` | `300` | Health check TTL |

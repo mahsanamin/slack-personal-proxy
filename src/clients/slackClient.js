@@ -2,6 +2,7 @@ const { WebClient } = require('@slack/web-api');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { maskToken } = require('../utils/helpers');
+const { noteSlackCall } = require('../utils/requestContext');
 
 class SlackClient {
   constructor() {
@@ -12,28 +13,35 @@ class SlackClient {
     this.teamId = null;
     this.teamName = null;
     this.ready = false;
-    this._lastRequestTime = 0;
-    this._requestQueue = Promise.resolve();
+    // One queue per Slack method. Slack rate limits each method on its own, so a wait on
+    // conversations.replies must not hold up search.messages or anything else.
+    this._queues = new Map();
     this._throttleMs = config.slackThrottleMs || 100;
   }
 
   /**
-   * Throttle Slack API calls to avoid hitting rate limits.
-   * Serializes requests with a minimum delay between each call.
+   * Run a Slack call through its method's queue: one at a time per method, with a minimum
+   * gap between calls. When Slack answers 429 the Slack library waits out Retry-After
+   * inside fn, which holds up that one method only.
    */
-  _throttle(fn) {
+  _throttle(fn, method = 'default') {
+    let q = this._queues.get(method);
+    if (!q) {
+      q = { tail: Promise.resolve(), last: 0 };
+      this._queues.set(method, q);
+    }
     // A failed Slack request must reject only its own caller. Keep the queue itself
     // fulfilled so one unsupported/expired API call does not poison every later call.
-    const request = this._requestQueue.catch(() => undefined).then(async () => {
-      const now = Date.now();
-      const elapsed = now - this._lastRequestTime;
+    const request = q.tail.catch(() => undefined).then(async () => {
+      const elapsed = Date.now() - q.last;
       if (elapsed < this._throttleMs) {
         await new Promise(r => setTimeout(r, this._throttleMs - elapsed));
       }
-      this._lastRequestTime = Date.now();
+      q.last = Date.now();
+      noteSlackCall(method);
       return fn();
     });
-    this._requestQueue = request.catch(() => undefined);
+    q.tail = request.catch(() => undefined);
     return request;
   }
 
@@ -147,7 +155,7 @@ class SlackClient {
         has_more: result.has_more || false,
         next_cursor: result.response_metadata?.next_cursor || null,
       };
-    });
+    }, 'conversations.history');
   }
 
   async getMessage(channelId, ts) {
@@ -159,7 +167,7 @@ class SlackClient {
         limit: 1,
       });
       return result.messages?.[0] || null;
-    });
+    }, 'conversations.history');
   }
 
   async getThreadReplies(channelId, threadTs, limit = 100, cursor = null, oldest = null) {
@@ -174,7 +182,7 @@ class SlackClient {
         has_more: result.has_more || false,
         next_cursor: result.response_metadata?.next_cursor || null,
       };
-    });
+    }, 'conversations.replies');
   }
 
   /**
@@ -183,35 +191,37 @@ class SlackClient {
    * The Slack search API omits these fields from results.
    * Returns { matches, apiCalls }.
    */
-  async enrichSearchMatches(matches, { fetchReplyCounts = false } = {}) {
+  async enrichSearchMatches(matches, { fetchReplyCounts = false, deadline = null } = {}) {
     let apiCalls = 0;
-    const enriched = await Promise.all(
-      matches.map(async (match) => {
-        // Extract thread_ts from permalink (e.g. ?thread_ts=1234.5678)
-        const threadTsMatch = match.permalink?.match(/thread_ts=([0-9.]+)/);
-        const threadTs = threadTsMatch ? threadTsMatch[1] : null;
-        const enrichedMatch = { ...match, thread_ts: threadTs, reply_count: 0 };
+    let partial = false;
+    const enriched = matches.map((match) => {
+      // Extract thread_ts from permalink (e.g. ?thread_ts=1234.5678)
+      const threadTsMatch = match.permalink?.match(/thread_ts=([0-9.]+)/);
+      const threadTs = threadTsMatch ? threadTsMatch[1] : null;
+      return { ...match, thread_ts: threadTs, reply_count: 0 };
+    });
 
-        // For thread parents, optionally fetch reply_count via API
-        if (fetchReplyCounts && threadTs && threadTs === match.ts) {
-          const channelId = match.channel?.id;
-          if (channelId) {
-            try {
-              const msg = await this.getMessage(channelId, match.ts);
-              apiCalls++;
-              if (msg && msg.ts === match.ts) {
-                enrichedMatch.reply_count = msg.reply_count || 0;
-              }
-            } catch (err) {
-              // Skip — reply_count stays 0
-            }
+    // For thread parents, optionally fetch reply_count via API. Done one at a time (the
+    // calls share one Slack queue anyway) so the time limit can stop it part way.
+    if (fetchReplyCounts) {
+      for (const match of enriched) {
+        if (!(match.thread_ts && match.thread_ts === match.ts)) continue;
+        const channelId = match.channel?.id;
+        if (!channelId) continue;
+        if (deadline && Date.now() >= deadline) { partial = true; break; }
+        try {
+          const msg = await this.getMessage(channelId, match.ts);
+          apiCalls++;
+          if (msg && msg.ts === match.ts) {
+            match.reply_count = msg.reply_count || 0;
           }
+        } catch (err) {
+          // Skip — reply_count stays 0
         }
+      }
+    }
 
-        return enrichedMatch;
-      })
-    );
-    return { matches: enriched, apiCalls };
+    return { matches: enriched, apiCalls, partial };
   }
 
   async searchMessages(query, count = 20, page = 1, sort = 'timestamp', sortDir = 'desc') {
@@ -230,14 +240,14 @@ class SlackClient {
         page: result.messages?.pagination?.page || 1,
         page_count: result.messages?.pagination?.page_count || 1,
       };
-    });
+    }, 'search.messages');
   }
 
   async getUserInfo(userId) {
     return this._throttle(async () => {
       const result = await this.client.users.info({ user: userId });
       return result.user;
-    });
+    }, 'users.info');
   }
 
   async listChannels(cursor = null, types = 'public_channel,private_channel') {
@@ -250,7 +260,7 @@ class SlackClient {
         channels: result.channels || [],
         next_cursor: result.response_metadata?.next_cursor || null,
       };
-    });
+    }, 'conversations.list');
   }
 
   // users.conversations: only the channels the signed-in account is in. Its Slack limit is
@@ -265,7 +275,7 @@ class SlackClient {
         channels: result.channels || [],
         next_cursor: result.response_metadata?.next_cursor || null,
       };
-    });
+    }, 'users.conversations');
   }
 
   async listUsers(cursor = null) {
@@ -278,35 +288,35 @@ class SlackClient {
         users: result.members || [],
         next_cursor: result.response_metadata?.next_cursor || null,
       };
-    });
+    }, 'users.list');
   }
 
   async getChannelInfo(channelId) {
     return this._throttle(async () => {
       const result = await this.client.conversations.info({ channel: channelId });
       return result.channel;
-    });
+    }, 'conversations.info');
   }
 
   async lookupUserByEmail(email) {
     return this._throttle(async () => {
       const result = await this.client.users.lookupByEmail({ email });
       return result.user;
-    });
+    }, 'users.lookupByEmail');
   }
 
   async openDmChannel(userId) {
     return this._throttle(async () => {
       const result = await this.client.conversations.open({ users: userId });
       return result.channel;
-    });
+    }, 'conversations.open');
   }
 
   async deleteMessage(channelId, ts) {
     return this._throttle(async () => {
       const result = await this.client.chat.delete({ channel: channelId, ts });
       return { ok: result.ok, channel: result.channel, ts: result.ts };
-    });
+    }, 'chat.delete');
   }
 
   async postMessage(channel, text, threadTs = null) {
@@ -316,7 +326,7 @@ class SlackClient {
 
       const result = await this.client.chat.postMessage(params);
       return result;
-    });
+    }, 'chat.postMessage');
   }
 }
 

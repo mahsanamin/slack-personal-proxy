@@ -1,6 +1,8 @@
 # API Endpoints
 
-All `/api/*` routes require `X-API-Key` header. `/health` and `/docs` are public.
+All `/api/*` routes require `X-API-Key` header. `/health`, `/guide` and `/docs` are public (inside the IP allowlist).
+
+Before polling anything, read the [consumer guide](../src/guide/consumer-guide.md) (also served at `/guide`): it lists which calls are cheap and which are heavy. Mention and activity answers are reused for 45 seconds and may come back `partial` after 20 seconds; see the `reused`, `age_seconds` and `partial` fields in `meta`.
 
 ## Channels
 

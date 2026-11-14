@@ -14,6 +14,7 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./config/swagger');
 
 const ipWhitelist = require('./middleware/ipWhitelist');
+const requestLog = require('./middleware/requestLog');
 const authMiddleware = require('./middleware/auth');
 const rateLimiter = require('./middleware/rateLimiter');
 const errorHandler = require('./middleware/errorHandler');
@@ -135,6 +136,15 @@ app.get('/health', async (req, res) => {
 if (config.dashboard.enabled) {
   app.use('/dashboard', dashboardRoutes);
 }
+
+// API routes (auth required)
+// Consumer guide (plain markdown, no key needed; the IP allowlist above still applies).
+app.get('/guide', (req, res) => {
+  res.type('text/markdown; charset=utf-8').sendFile(require('path').join(__dirname, 'guide', 'consumer-guide.md'));
+});
+
+// One log line per API request (caller, route, status, duration, Slack calls it caused).
+app.use(['/api', '/mcp'], requestLog);
 
 // API routes (auth required)
 app.use('/api', authMiddleware, apiRoutes);

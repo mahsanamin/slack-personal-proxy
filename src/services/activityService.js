@@ -1,3 +1,4 @@
+const config = require('../config');
 const logger = require('../utils/logger');
 const { filterMatches } = require('./keyAccess');
 
@@ -14,6 +15,10 @@ class ActivityService {
     const query = 'from:me';
 
     logger.info(`Fetching threads participated in by ${userId} (count=${count})`);
+
+    // Stop fetching threads after the request budget and return what we have, marked partial.
+    const deadline = Date.now() + config.requestBudgetMs;
+    let partial = false;
 
     // Fetch generously — most results are non-thread messages that get filtered out
     const searchCount = 100;
@@ -52,6 +57,7 @@ class ActivityService {
 
     const threads = [];
     for (const [, thread] of seenThreads) {
+      if (Date.now() >= deadline) { partial = true; break; }
       try {
         const threadData = await this.messageService.getCompleteThread(
           thread.channel_id, thread.thread_ts
@@ -98,6 +104,7 @@ class ActivityService {
       total_threads: threads.length,
       threads_with_new_activity: threads.filter(t => t.thread_stats.new_replies_since_your_last > 0).length,
       api_calls_made: apiCalls,
+      partial,
     };
   }
 
@@ -107,6 +114,9 @@ class ActivityService {
 
     logger.info(`Fetching threads started by ${userId} (count=${count})`);
 
+    const deadline = Date.now() + config.requestBudgetMs;
+    let partial = false;
+
     // Fetch generously — most results are non-thread messages that get filtered out
     const searchCount = 100;
     const searchResult = await this.slack.searchMessages(query, searchCount, 1, 'timestamp', 'desc');
@@ -115,9 +125,10 @@ class ActivityService {
     // Enrich with thread metadata; fetch reply_count for thread parents
     const enrichResult = await this.slack.enrichSearchMatches(
       filterMatches(access, searchResult.messages),
-      { fetchReplyCounts: true }
+      { fetchReplyCounts: true, deadline }
     );
     apiCalls += enrichResult.apiCalls;
+    if (enrichResult.partial) partial = true;
 
     const seenThreads = new Map();
 
@@ -144,6 +155,12 @@ class ActivityService {
 
     const threads = [];
     for (const [, thread] of seenThreads) {
+      if (includeReplies && Date.now() >= deadline) {
+        // Out of time: keep the thread's basics, skip its replies.
+        partial = true;
+        threads.push(thread);
+        continue;
+      }
       if (includeReplies) {
         try {
           const threadData = await this.messageService.getCompleteThread(
@@ -175,6 +192,7 @@ class ActivityService {
       threads,
       total_threads: threads.length,
       api_calls_made: apiCalls,
+      partial,
     };
   }
 }

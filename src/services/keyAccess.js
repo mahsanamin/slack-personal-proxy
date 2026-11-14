@@ -89,6 +89,14 @@ function filterMatches(access, matches) {
   return filterReadable(access, matches, (m) => m.channel?.id);
 }
 
+// Stable text for what a key may read, so saved results are never shared between keys
+// that can see different channels.
+function scopeSignature(access) {
+  if (!access) return 'none';
+  if (access.unrestricted) return 'all';
+  return 'ch:' + [...access.readable].sort().join(',');
+}
+
 function isValidChannelId(value) {
   return typeof value === 'string' && CHANNEL_ID_RE.test(value);
 }
@@ -104,5 +112,6 @@ module.exports = {
   assertDmSend,
   filterReadable,
   filterMatches,
+  scopeSignature,
   isValidChannelId,
 };

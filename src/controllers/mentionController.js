@@ -1,6 +1,8 @@
 const { formatSuccessResponse, parseBoolean } = require('../utils/helpers');
 const { compactMention, compactThread } = require('../utils/compactThread');
-const { resolveAccess } = require('../services/keyAccess');
+const { resolveAccess, scopeSignature } = require('../services/keyAccess');
+const { reuse } = require('../utils/responseReuse');
+const config = require('../config');
 
 async function getAllMentions(req, res, next) {
   try {
@@ -9,12 +11,25 @@ async function getAllMentions(req, res, next) {
     const includeThreads = parseBoolean(req.query.includeThreads, true);
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await mentionService.getAllMentions(count, includeThreads, resolveAccess(req.apiKey));
+    const access = resolveAccess(req.apiKey);
+    const { value: result, reused, ageSeconds } = await reuse(
+      req.services.cacheService,
+      ['mentions.all', req.services.slackClient.currentUserId, count, includeThreads, scopeSignature(access)],
+      config.cache.activityTtl,
+      () => mentionService.getAllMentions(count, includeThreads, access)
+    );
     const mentions = verbose ? result.mentions : result.mentions.map(compactMention);
+    res.locals.requestNote = { reused, partial: result.partial };
 
     res.json(formatSuccessResponse(
       { mentions, grouped_by_channel: result.grouped_by_channel },
-      { total_mentions: result.total_mentions, api_calls_made: result.api_calls_made }
+      {
+        total_mentions: result.total_mentions,
+        api_calls_made: reused ? 0 : result.api_calls_made,
+        partial: Boolean(result.partial),
+        reused,
+        age_seconds: ageSeconds,
+      }
     ));
   } catch (err) {
     next(err);
@@ -27,12 +42,25 @@ async function getMentionThreads(req, res, next) {
     const count = parseInt(req.query.count, 10) || 20;
     const verbose = parseBoolean(req.query.verbose, false);
 
-    const result = await mentionService.getMentionThreads(count, resolveAccess(req.apiKey));
+    const access = resolveAccess(req.apiKey);
+    const { value: result, reused, ageSeconds } = await reuse(
+      req.services.cacheService,
+      ['mentions.threads', req.services.slackClient.currentUserId, count, scopeSignature(access)],
+      config.cache.activityTtl,
+      () => mentionService.getMentionThreads(count, access)
+    );
     const threads = verbose ? result.threads : result.threads.map(compactThread);
+    res.locals.requestNote = { reused, partial: result.partial };
 
     res.json(formatSuccessResponse(
       { threads },
-      { total_threads: result.total_threads, api_calls_made: result.api_calls_made }
+      {
+        total_threads: result.total_threads,
+        api_calls_made: reused ? 0 : result.api_calls_made,
+        partial: Boolean(result.partial),
+        reused,
+        age_seconds: ageSeconds,
+      }
     ));
   } catch (err) {
     next(err);

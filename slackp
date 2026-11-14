@@ -215,6 +215,20 @@ def cmd_status(args):
     return {"success": True, "data": {"profile": name, "url": profile["url"], "auth": auth.get("data", auth)}}
 
 
+def cmd_guide(args):
+    """Print the consumer guide served by the proxy (plain markdown, no key needed)."""
+    _config, _name, profile = selected_profile(args)
+    req = request.Request(profile["url"] + "/guide", headers={"User-Agent": "slackp/%s" % VERSION})
+    context = ssl._create_unverified_context() if profile.get("insecure") and profile["url"].startswith("https://") else None
+    try:
+        with request.urlopen(req, timeout=profile.get("timeout", 30), context=context) as response:
+            return response.read().decode("utf-8")
+    except error.HTTPError as exc:
+        raise SlackpError("Server returned HTTP %s for /guide (update the proxy?)" % exc.code, "HTTP_ERROR", status=exc.code)
+    except error.URLError as exc:
+        raise SlackpError("Could not reach %s: %s" % (profile["url"], exc.reason), "CONNECTION_FAILED")
+
+
 def cmd_unread(args, profile):
     common = {"count": args.count, "verbose": bool_text(args.verbose)}
     mentions = api_call(profile, "GET", "/api/mentions/all", {**common, "includeThreads": "false"})
@@ -390,6 +404,7 @@ def build_parser():
     sub.add_parser("disconnect", help="Remove the selected local profile")
     sub.add_parser("status", help="Show selected profile and verify authentication")
     sub.add_parser("health", help="Show server and Slack health")
+    sub.add_parser("guide", help="Print the guide on using the proxy without causing rate limits")
     sub.add_parser("auth", help="Show authenticated Slack identity and API-key metadata")
 
     p = sub.add_parser("unread", help="Mentions plus threads you joined or started"); add_count(p); add_verbose(p)
@@ -431,6 +446,9 @@ def main(argv=None):
             result = cmd_status(args)
         elif args.command == "install":
             result = cmd_install(args)
+        elif args.command == "guide":
+            sys.stdout.write(cmd_guide(args))
+            return 0
         else:
             _config, _name, profile = selected_profile(args)
             result = run_api_command(args, profile)
