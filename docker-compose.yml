@@ -14,6 +14,12 @@ services:
     volumes:
       - ./certs:/app/certs:ro
       - ./data:/app/data
+    # Explicit DNS. Without it the container inherits the host's resolv.conf at start,
+    # and if Docker comes up at boot before systemd-resolved is ready it can copy the
+    # 127.0.0.53 stub, which is unreachable from a container (EAI_AGAIN slack.com).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     read_only: true
     tmpfs:
       - /tmp
