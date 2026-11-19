@@ -193,6 +193,7 @@ class ConfigStore extends EventEmitter {
       createdAt: k.createdAt,
       lastUsedAt: k.lastUsedAt || null,
       revokedAt: k.revokedAt || null,
+      updatedAt: k.updatedAt || null,
       access: k.access || 'read_write',
       readChannels: Array.isArray(k.readChannels) ? [...k.readChannels] : null,
     }));
@@ -224,6 +225,25 @@ class ConfigStore extends EventEmitter {
     this._writeJson(this._path('apikeys.json'), this._keys);
     logger.info(`API key created: ${rec.label} (${rec.prefix}, ${access}, ${readChannels ? readChannels.length + ' channels' : 'all channels'})`);
     return { key: secret, meta: this.listKeys().find((k) => k.id === rec.id) };
+  }
+
+  /**
+   * Changes what an existing key may do. The secret stays the same, so clients keep
+   * working. The record is updated in place, and the auth middleware hands that same
+   * record to every request, so the new scope applies from the next request.
+   * Returns the updated metadata, or null when there is no such key.
+   */
+  updateKeyScope(id, scope = {}) {
+    const rec = this._keys.find((k) => k.id === id);
+    if (!rec) return null;
+    rec.access = scope.access === 'read_write' ? 'read_write' : 'read';
+    rec.readChannels = scope.readChannels === null || scope.readChannels === undefined
+      ? null
+      : [...new Set(scope.readChannels)];
+    rec.updatedAt = new Date().toISOString();
+    this._writeJson(this._path('apikeys.json'), this._keys);
+    logger.info(`API key scope changed: ${rec.label} (${rec.prefix}, ${rec.access}, ${rec.readChannels ? rec.readChannels.length + ' channels' : 'all channels'})`);
+    return this.listKeys().find((k) => k.id === id);
   }
 
   /** Hard-delete a key: it is removed from the list entirely and stops working. */

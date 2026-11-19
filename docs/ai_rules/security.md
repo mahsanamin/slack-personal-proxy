@@ -22,7 +22,10 @@
 - **Per-key scope** (`src/services/keyAccess.js`): each key has `access` (`read` or `read_write`) and
   `readChannels` (`null` for all channels, or a list of channel IDs). A selected-channel key reads only
   those IDs, so it never sees DMs unless one is listed. Read-only keys cannot send, delete, or request DMs.
-  Keys created before scopes existed keep full access; revoke and recreate them to restrict them.
+  Keys created before scopes existed keep full access. The owner can change any key's scope from the
+  dashboard (`PATCH /dashboard/api/keys/:id`) without changing its secret; the change applies from the
+  key's next request. Group DMs have `C…` IDs like channels, so a key can be given one by ID and then
+  reads it and (if `read_write`) sends to it like any channel. Sends still pass `ALLOWED_WRITE_CHANNELS`.
 
 ## HTTP Security
 

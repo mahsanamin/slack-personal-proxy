@@ -194,6 +194,25 @@ function createKey(req, res) {
   }
 }
 
+// Changes the access level and channels of an existing key. The secret does not change,
+// so the machine using it keeps working. access must be given: leaving it out would
+// silently turn a read_write key into a read-only one.
+function updateKey(req, res) {
+  const body = req.body || {};
+  const scope = body.access === undefined ? null : parseKeyScope(body);
+  if (!scope) {
+    return res.status(ERR.BAD_KEY_SCOPE.status).json(formatErrorResponse(ERR.BAD_KEY_SCOPE));
+  }
+  try {
+    const meta = configStore.updateKeyScope(req.params.id, scope);
+    if (!meta) return res.status(ERR.NOT_FOUND.status).json(formatErrorResponse(ERR.NOT_FOUND));
+    res.json(formatSuccessResponse({ meta }));
+  } catch (err) {
+    logger.error(`updateKey failed: ${err.message}`);
+    res.status(STORE_WRITE_FAILED.status).json(formatErrorResponse(STORE_WRITE_FAILED, { reason: err.message }));
+  }
+}
+
 function revokeKey(req, res) {
   try {
     const ok = configStore.revokeKey(req.params.id);
@@ -205,11 +224,21 @@ function revokeKey(req, res) {
   }
 }
 
-// Channels offered when creating a key. Public and private channels only: direct
-// messages and group DMs are never listed, so they cannot be picked by accident.
-// The picker starts from the channels the account is in (fast to get from Slack). The
-// full workspace list is built in the background and merged in when it is ready, so
-// public channels the account has not joined show up later. refresh asks Slack again.
+// Slack names a group DM nobody renamed "mpdm-alice--bob--carol-1". Show the people
+// instead, leaving out the signed-in user. A renamed group DM keeps its own name.
+function groupDmLabel(name, selfName) {
+  const match = /^mpdm-(.+)-\d+$/.exec(name || '');
+  if (!match) return name || '';
+  const people = match[1].split('--').filter((p) => p && p !== selfName);
+  return people.length ? people.join(', ') : name;
+}
+
+// Channels offered when creating or editing a key: public and private channels, plus
+// the group DMs the account is in. One-to-one DMs are never listed, so they cannot be
+// picked by accident (the owner can still paste a D… ID on purpose).
+// The picker starts from the conversations the account is in (fast to get from Slack).
+// The full workspace list is built in the background and merged in when it is ready,
+// so public channels the account has not joined show up later. refresh asks Slack again.
 function channelsHandler(refresh) {
   return async (req, res, next) => {
     try {
@@ -231,16 +260,20 @@ function channelsHandler(refresh) {
       for (const c of (members ? members.channels : [])) byId.set(c.id, { ...c, is_member: true });
       for (const c of (full ? full.channels : [])) if (!byId.has(c.id)) byId.set(c.id, { ...c, is_member: false });
 
+      const selfName = req.services.slackClient && req.services.slackClient.currentUserName;
+      // Channels first, then group DMs, each sorted by what the picker shows.
       const channels = [...byId.values()]
         .map((c) => ({
           id: c.id,
           name: c.name,
+          label: c.is_group_dm ? groupDmLabel(c.name, selfName) : c.name,
+          is_group_dm: Boolean(c.is_group_dm),
           is_private: Boolean(c.is_private),
           is_archived: Boolean(c.is_archived),
           member_count: c.member_count || 0,
           is_member: c.is_member,
         }))
-        .sort((x, y) => x.name.localeCompare(y.name));
+        .sort((x, y) => (x.is_group_dm - y.is_group_dm) || x.label.localeCompare(y.label));
 
       res.json(formatSuccessResponse({
         channels,
@@ -483,7 +516,8 @@ async function summary(req, res, next) {
 module.exports = {
   login, logout, bootstrap, status,
   testSlack, saveSlack,
-  listKeys, createKey, revokeKey, listChannelsForKeys, refreshChannelsForKeys,
+  listKeys, createKey, updateKey, revokeKey, listChannelsForKeys, refreshChannelsForKeys,
+  groupDmLabel,
   listDmUsers, addDmUser, removeDmUser,
   listDmApprovals, decideDmApproval,
   summary,

@@ -93,7 +93,7 @@ to know that someone mentioned you. Open the thread only for new mentions.
 | HTTP 429 or `RATE_LIMIT_EXCEEDED` | Too many requests to the proxy. | Wait 30 seconds or more. |
 | A call that takes many seconds | The proxy is waiting on Slack for that method. | Do not send more of the same call. |
 | `INVALID_API_KEY` (401) | The key was revoked or mistyped. | Ask the owner for a new key. Do not retry. |
-| `CHANNEL_NOT_IN_KEY_SCOPE` | The channel is not in this key's list. | Ask the owner to add the channel. |
+| `CHANNEL_NOT_IN_KEY_SCOPE` | The channel is not in this key's list. | Ask the owner to add the channel (or group DM) to this key. The key itself does not change, so keep using it. |
 | `KEY_READ_ONLY` | The key cannot send or delete. | Use a read and write key if that is intended. |
 
 ## For the owner

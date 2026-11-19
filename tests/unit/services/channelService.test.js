@@ -119,6 +119,34 @@ describe('ChannelService channel list cache', () => {
     expect(result.channels.map((c) => c.id)).toEqual(['C1']);
   });
 
+  test('a scoped key also sees the group DMs it was given, from the member list', async () => {
+    const fetchMemberChannels = jest.fn(async () => ({
+      items: [ITEMS[0], { id: 'CGDM1', name: 'Project-Crew', is_mpim: true, is_private: true }, { id: 'CGDM2', name: 'other-group', is_mpim: true }],
+      api_calls: 1,
+    }));
+    const { service } = build({ fetchMemberChannels });
+    const scoped = { unrestricted: false, canWrite: true, readable: new Set(['C1', 'CGDM1']) };
+    const result = await service.listChannels(scoped);
+    expect(result.channels.map((c) => c.id)).toEqual(['C1', 'CGDM1']);
+    expect(result.channels[1].is_group_dm).toBe(true);
+    expect(result.total_count).toBe(2);
+  });
+
+  test('a scoped key whose channels are all in the workspace list does not fetch the member list', async () => {
+    const { service, pagination } = build();
+    const scoped = { unrestricted: false, canWrite: false, readable: new Set(['C1']) };
+    await service.listChannels(scoped);
+    expect(pagination.fetchMemberChannels).not.toHaveBeenCalled();
+  });
+
+  test('a failing member list does not break a scoped channel list', async () => {
+    const fetchMemberChannels = jest.fn(async () => { throw new Error('ratelimited'); });
+    const { service } = build({ fetchMemberChannels });
+    const scoped = { unrestricted: false, canWrite: false, readable: new Set(['C1', 'CGDM1']) };
+    const result = await service.listChannels(scoped);
+    expect(result.channels.map((c) => c.id)).toEqual(['C1']);
+  });
+
   test('member list calls the member method only and is saved separately', async () => {
     const { service, pagination, memberStore, store } = build();
     const result = await service.listMemberChannels();

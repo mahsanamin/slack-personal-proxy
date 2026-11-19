@@ -44,3 +44,8 @@ checked in `src/middleware/channelAccess.js` (GET = read, other methods = write)
 and activity filter Slack results by channel before enrichment. Selected-channel keys cannot send
 DMs. Keys created before scopes existed have full access. Do not add a route that reads channel
 data without checking the key's access.
+
+Scope is editable after creation (`PATCH /dashboard/api/keys/:id`, `configStore.updateKeyScope`).
+The auth middleware returns the stored record itself, so an edit applies on the next request.
+Group DMs (Slack `mpim`) have `C…` IDs and are listed in the picker from `users.conversations`;
+they are not in the workspace `conversations.list` crawl.

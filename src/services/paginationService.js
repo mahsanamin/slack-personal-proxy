@@ -1,6 +1,8 @@
 const config = require('../config');
 const logger = require('../utils/logger');
 
+const MEMBER_CONVERSATION_TYPES = 'public_channel,private_channel,mpim';
+
 class PaginationService {
   /**
    * Generic paginated fetch
@@ -46,9 +48,10 @@ class PaginationService {
     return this.fetchAll(apiFn, maxCalls || config.maxDirectoryPaginationCalls);
   }
 
-  // Channels the Slack account belongs to. A handful of calls, not a workspace crawl.
+  // Conversations the Slack account belongs to: channels plus group DMs (mpim). A
+  // handful of calls, not a workspace crawl. One-to-one DMs are left out.
   async fetchMemberChannels(slackClient, maxCalls = null) {
-    const apiFn = async ({ cursor }) => slackClient.listMemberChannels(cursor);
+    const apiFn = async ({ cursor }) => slackClient.listMemberChannels(cursor, MEMBER_CONVERSATION_TYPES);
     return this.fetchAll(apiFn, maxCalls || config.maxDirectoryPaginationCalls);
   }
 

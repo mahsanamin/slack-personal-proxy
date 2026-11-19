@@ -92,7 +92,8 @@ All routes are still behind the global IP allowlist.
 | POST | `/dashboard/api/setup/slack` | session | Test then store Slack creds (encrypted), hot-reload |
 | GET | `/dashboard/api/keys` | session | List API keys (metadata only) |
 | POST | `/dashboard/api/keys` | session | Create a key (secret shown once). Body: `label`, `access` (`read` default or `read_write`), `channels` (`"all"` or a non-empty list of channel IDs) |
-| GET | `/dashboard/api/channels` | session | Channels to choose from when creating a key (channels only, no DMs) |
+| PATCH | `/dashboard/api/keys/:id` | session | Change an existing key's scope. The secret stays the same. Body: `access` (required, `read` or `read_write`), `channels` (`"all"` or a non-empty list of conversation IDs) |
+| GET | `/dashboard/api/channels` | session | Channels and group DMs to choose from when creating or editing a key. Group DMs have `is_group_dm: true` and a readable `label`. One-to-one DMs are not listed |
 | DELETE | `/dashboard/api/keys/:id` | session | Revoke a key |
 | GET | `/dashboard/api/dm-allowlist` | session | List DM-allowed users |
 | GET | `/dashboard/slackp` | none | Download the dependency-free `slackp` CLI (still IP-allowlisted) |

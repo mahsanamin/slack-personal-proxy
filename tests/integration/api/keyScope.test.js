@@ -21,6 +21,8 @@ const KEYS = {
   'secret-read': { id: 'k-read', label: 'read only', access: 'read', readChannels: ['C0AAAAAAA1'] },
   'secret-readwrite': { id: 'k-rw', label: 'read write', access: 'read_write', readChannels: ['C0AAAAAAA1'] },
   'secret-all-read': { id: 'k-all', label: 'all read only', access: 'read', readChannels: null },
+  // A key given a group DM (Slack gives group DMs C… IDs) next to a normal channel.
+  'secret-group-dm': { id: 'k-gdm', label: 'group dm', access: 'read_write', readChannels: ['C0AAAAAAA1', 'C0GROUPDM1'] },
 };
 
 jest.mock('../../../src/services/configStore', () => ({
@@ -234,6 +236,29 @@ describe('per-key channel scope (HTTP)', () => {
       expect(res.status).toBe(403);
       expect(res.body.error.code).toBe('DM_NOT_IN_KEY_SCOPE');
       expect(services.messageService.sendDirectMessage).not.toHaveBeenCalled();
+    });
+
+    test('a key given a group DM can read it and send to it', async () => {
+      const read = await request(app).get('/api/channels/C0GROUPDM1/recent-messages').set('X-API-Key', 'secret-group-dm');
+      expect(read.status).toBe(200);
+      const sent = await request(app)
+        .post('/api/messages/C0GROUPDM1/send')
+        .set('X-API-Key', 'secret-group-dm')
+        .send({ text: 'hello group' });
+      expect(sent.status).toBe(200);
+      expect(services.messageService.sendMessage).toHaveBeenCalledWith('C0GROUPDM1', 'hello group', null, 'k-gdm');
+    });
+
+    test('a key without that group DM cannot read or send to it', async () => {
+      const read = await request(app).get('/api/channels/C0GROUPDM1/recent-messages').set('X-API-Key', READ_WRITE);
+      expect(read.status).toBe(403);
+      expect(read.body.error.code).toBe('CHANNEL_NOT_IN_KEY_SCOPE');
+      const sent = await request(app)
+        .post('/api/messages/C0GROUPDM1/send')
+        .set('X-API-Key', READ_WRITE)
+        .send({ text: 'hello group' });
+      expect(sent.status).toBe(403);
+      expect(services.messageService.sendMessage).not.toHaveBeenCalled();
     });
 
     test('read-only key is refused for direct messages too', async () => {

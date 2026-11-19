@@ -37,6 +37,7 @@ router.post('/api/setup/slack', c.saveSlack);
 
 router.get('/api/keys', c.listKeys);
 router.post('/api/keys', c.createKey);
+router.patch('/api/keys/:id', c.updateKey);
 router.delete('/api/keys/:id', c.revokeKey);
 router.get('/api/channels', c.listChannelsForKeys);
 router.post('/api/channels/refresh', c.refreshChannelsForKeys);

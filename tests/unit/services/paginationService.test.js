@@ -98,6 +98,16 @@ describe('PaginationService', () => {
     expect(mockSlackClient.listChannels).toHaveBeenCalled();
   });
 
+  test('fetchMemberChannels asks for channels and group DMs, never one-to-one DMs', async () => {
+    const mockSlackClient = {
+      listMemberChannels: jest.fn().mockResolvedValue({ channels: [{ id: 'C1' }], next_cursor: null }),
+    };
+    await pagination.fetchMemberChannels(mockSlackClient);
+    const types = mockSlackClient.listMemberChannels.mock.calls[0][1].split(',');
+    expect(types).toEqual(expect.arrayContaining(['public_channel', 'private_channel', 'mpim']));
+    expect(types).not.toContain('im');
+  });
+
   test('fetchAllUsers calls slackClient.listUsers', async () => {
     const mockSlackClient = {
       listUsers: jest.fn().mockResolvedValue({

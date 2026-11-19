@@ -24,7 +24,24 @@ class ChannelService {
     if (!isScoped(access)) return data;
 
     const channels = data.channels.filter((ch) => canRead(access, ch.id));
+    await this._addScopedGroupDms(access, channels);
     return { ...data, channels, total_count: channels.length };
+  }
+
+  // Group DMs are not in the workspace list. When a key was given one, add it from the
+  // list of conversations the account is in, so the key can see what it has access to.
+  async _addScopedGroupDms(access, channels) {
+    if (!access || !access.readable) return;
+    const found = new Set(channels.map((ch) => ch.id));
+    if (![...access.readable].some((id) => !found.has(id))) return;
+    try {
+      const members = await this.listMemberChannels();
+      for (const ch of members.channels) {
+        if (ch.is_group_dm && canRead(access, ch.id) && !found.has(ch.id)) channels.push(ch);
+      }
+    } catch (err) {
+      logger.warn(`Could not add group DMs to a scoped channel list: ${err.message}`);
+    }
   }
 
   // Only the channels the Slack account belongs to. Slack answers this quickly (a few
@@ -110,6 +127,8 @@ class ChannelService {
       const channels = result.items.map(ch => ({
         id: ch.id,
         name: ch.name,
+        // Group DMs only come from the member list. Flagged so the picker can label them.
+        ...(ch.is_mpim ? { is_group_dm: true } : {}),
         is_private: ch.is_private || false,
         is_archived: ch.is_archived || false,
         member_count: ch.num_members || 0,

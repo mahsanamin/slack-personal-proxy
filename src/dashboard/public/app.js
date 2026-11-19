@@ -343,39 +343,17 @@ async function viewKeys(root) {
     } catch (err) { clear(listBody); listBody.appendChild(el('div', { class: 'notice err', text: err.message })); }
   }
 
-  const picker = channelPicker();
-  const access = el('select', { id: 'ka' }, [
-    el('option', { value: 'read', text: 'Read only (recommended)' }),
-    el('option', { value: 'read_write', text: 'Read and write (sends and deletes still need the channel to be selected)' }),
-  ]);
-  const scope = el('select', { id: 'ks' }, [
-    el('option', { value: 'selected', text: 'Selected channels only (recommended)' }),
-    el('option', { value: 'all', text: 'All channels, including my direct messages' }),
-  ]);
-  const pickerBox = el('div', {}, [
-    el('label', { text: 'Channels this key may use' }),
-    picker.node,
-  ]);
-  const syncScope = () => {
-    pickerBox.style.display = scope.value === 'selected' ? '' : 'none';
-    if (scope.value === 'selected') picker.load();
-  };
-  scope.addEventListener('change', syncScope);
+  const scopeEditor = keyScopeForm(null);
 
   const create = async () => {
-    const body = { label: label.value || 'unnamed', access: access.value };
-    if (scope.value === 'all') {
-      if (!confirm('This key can read every channel AND every direct message you can see. Only continue if that is intended.')) return;
-      body.channels = 'all';
-    } else {
-      const ids = picker.selected();
-      if (!ids.length) {
-        clear(created);
-        created.appendChild(el('div', { class: 'notice err', text: 'Select at least one channel, or choose "All channels".' }));
-        return;
-      }
-      body.channels = ids;
+    const r0 = scopeEditor.read();
+    if (r0.error) {
+      clear(created);
+      created.appendChild(el('div', { class: 'notice err', text: r0.error }));
+      return;
     }
+    if (r0.body.channels === 'all' && !confirm(ALL_CHANNELS_WARNING)) return;
+    const body = Object.assign({ label: label.value || 'unnamed' }, r0.body);
     try {
       const r = await api('/api/keys', { method: 'POST', body: JSON.stringify(body) });
       showCreatedKey(created, r.key);   // stays on screen with Copy; NOT wiped by a re-render
@@ -383,7 +361,6 @@ async function viewKeys(root) {
       refreshList();                    // update the list only, leaving the key visible
     } catch (err) { clear(created); created.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) })); }
   };
-  syncScope();
 
   root.appendChild(el('div', { class: 'grid' }, [
     el('div', { class: 'card' }, [
@@ -394,9 +371,7 @@ async function viewKeys(root) {
       el('h3', { class: 'step-title', text: '2. Generate its secure key' }),
       el('p', { class: 'muted', text: 'Give the machine a recognizable label. Generate the key, copy it immediately, and do not share or screenshot it.' }),
       el('label', { text: 'Label' }), label,
-      el('label', { text: 'Access' }), access,
-      el('label', { text: 'Which channels' }), scope,
-      pickerBox,
+      scopeEditor.node,
       el('div', { class: 'actions' }, [el('button', { text: 'Generate key', onclick: create })]),
       created,
       el('h3', { class: 'step-title', text: '3. Connect the machine' }),
@@ -422,16 +397,98 @@ function keyScopeText(k) {
   return access + ' · ' + channels;
 }
 
-// Channel checklist used when creating a key. Lists channels only, never DMs.
-function channelPicker() {
-  const chosen = new Set();
+const ALL_CHANNELS_WARNING = 'This key can read every channel AND every direct message you can see. Only continue if that is intended.';
+
+// Access level + channel choice, used both to create a key and to edit one.
+// initial is an existing key's { access, readChannels }, or null for a new key.
+function keyScopeForm(initial) {
+  const editing = Boolean(initial);
+  const startAll = editing && (initial.readChannels === null || initial.readChannels === undefined);
+  const picker = channelPicker(editing && !startAll ? initial.readChannels : []);
+  const access = el('select', {}, [
+    el('option', { value: 'read', text: 'Read only (recommended)' }),
+    el('option', { value: 'read_write', text: 'Read and write (sends and deletes still need the channel to be selected)' }),
+  ]);
+  access.value = editing && initial.access === 'read_write' ? 'read_write' : 'read';
+  const scope = el('select', {}, [
+    el('option', { value: 'selected', text: 'Selected channels only (recommended)' }),
+    el('option', { value: 'all', text: 'All channels, including my direct messages' }),
+  ]);
+  scope.value = startAll ? 'all' : 'selected';
+  const pickerBox = el('div', {}, [
+    el('label', { text: 'Channels and group DMs this key may use' }),
+    picker.node,
+  ]);
+  const syncScope = () => {
+    pickerBox.style.display = scope.value === 'selected' ? '' : 'none';
+    if (scope.value === 'selected') picker.load();
+  };
+  scope.addEventListener('change', syncScope);
+  syncScope();
+
+  return {
+    node: el('div', {}, [
+      el('label', { text: 'Access' }), access,
+      el('label', { text: 'Which channels' }), scope,
+      pickerBox,
+    ]),
+    // What to send to the API, or an error to show.
+    read() {
+      if (scope.value === 'all') return { body: { access: access.value, channels: 'all' } };
+      const ids = picker.selected();
+      if (!ids.length) return { error: 'Select at least one channel, or choose "All channels".' };
+      return { body: { access: access.value, channels: ids } };
+    },
+  };
+}
+
+// Inline editor under a key row: change its access and channels without a new secret.
+function keyEditor(k, onDone) {
+  const form = keyScopeForm(k);
+  const msg = el('div');
+  const wasAll = k.readChannels === null || k.readChannels === undefined;
+  const save = async () => {
+    clear(msg);
+    const r = form.read();
+    if (r.error) { msg.appendChild(el('div', { class: 'notice err', text: r.error })); return; }
+    if (r.body.channels === 'all' && !wasAll && !confirm(ALL_CHANNELS_WARNING)) return;
+    saveBtn.disabled = true;
+    try {
+      await api('/api/keys/' + k.id, { method: 'PATCH', body: JSON.stringify(r.body) });
+      onDone(true);
+    } catch (err) {
+      saveBtn.disabled = false;
+      msg.appendChild(el('div', { class: 'notice err', text: err.message + reason(err) }));
+    }
+  };
+  const saveBtn = el('button', { text: 'Save changes', onclick: save });
+  return el('div', { class: 'key-editor' }, [
+    el('p', { class: 'muted', text: 'The key itself does not change, so the machine using it keeps working. New access applies from its next request.' }),
+    form.node,
+    msg,
+    el('div', { class: 'actions' }, [
+      saveBtn,
+      el('button', { class: 'secondary', text: 'Cancel', onclick: () => onDone(false) }),
+    ]),
+  ]);
+}
+
+// Slack IDs: C… channel or group DM, D… direct message, G… older private channel.
+// Real IDs always contain a digit, so an all-caps word is not mistaken for one.
+const CONVERSATION_ID_RE = /^[CDG](?=[A-Z0-9]*[0-9])[A-Z0-9]{8,}$/;
+
+// Checklist of channels and group DMs, used when creating or editing a key.
+// One-to-one DMs are not listed; their D… ID can still be pasted on purpose.
+function channelPicker(initialIds) {
+  const chosen = new Set(initialIds || []);
   let channels = [];
   let loaded = false;
   let fullReady = false;
-  const filter = el('input', { type: 'text', placeholder: 'Filter channels' });
-  const count = el('span', { class: 'muted', text: '0 selected' });
+  const filter = el('input', { type: 'text', placeholder: 'Filter channels and group DMs' });
+  const count = el('span', { class: 'muted', text: chosen.size + ' selected' });
+  const onlySelected = el('input', { type: 'checkbox' });
   const list = el('div', { class: 'pick-list' });
-  const bulk = el('textarea', { placeholder: 'Paste channel names: #product-hajj-umrah, #hajj-umrah-core or one per line' });
+  const bulk = el('textarea', { placeholder: 'Paste channel names or IDs: #team-updates, #project-core, C0123ABCDE, or one per line' });
   const bulkNote = el('div', { class: 'muted', style: 'margin-top:6px' });
   const info = el('span', { class: 'muted' });
   const fullNote = el('div', { class: 'muted', style: 'margin-top:6px' });
@@ -441,56 +498,84 @@ function channelPicker() {
   function updateCount() { count.textContent = chosen.size + ' selected'; }
 
   // Splits pasted text on commas, spaces, semicolons and new lines; strips a leading #.
-  function parseNames(text) {
+  // Case is kept so IDs can be told apart from names.
+  function parseTokens(text) {
     return [...new Set(String(text || '')
       .split(/[\s,;]+/)
-      .map((n) => n.trim().replace(/^#/, '').toLowerCase())
+      .map((n) => n.trim().replace(/^#/, ''))
       .filter(Boolean))];
   }
 
   async function selectPasted() {
     await load();
     if (!loaded) return;
-    const byName = new Map(channels.map((c) => [c.name.toLowerCase(), c.id]));
-    const names = parseNames(bulk.value);
+    const byName = new Map();
+    for (const c of channels) {
+      byName.set(c.name.toLowerCase(), c.id);
+      if (c.label) byName.set(c.label.toLowerCase(), c.id);
+    }
+    const tokens = parseTokens(bulk.value);
     const missing = [];
     let matched = 0;
-    for (const name of names) {
-      const id = byName.get(name);
-      if (id) { chosen.add(id); matched++; } else missing.push(name);
+    for (const token of tokens) {
+      // A name wins over an ID-shaped token, then a pasted ID is taken as given.
+      const id = byName.get(token.toLowerCase()) || (CONVERSATION_ID_RE.test(token) ? token : null);
+      if (id) { chosen.add(id); matched++; } else missing.push(token);
     }
     updateCount();
     render();
     clear(bulkNote);
-    bulkNote.appendChild(el('span', { text: 'Selected ' + matched + ' of ' + names.length + '.' }));
+    bulkNote.appendChild(el('span', { text: 'Selected ' + matched + ' of ' + tokens.length + '.' }));
     if (missing.length) {
       bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px', text: (fullReady ? 'Not found (check spelling): ' : 'Not found yet (check spelling; channels you have not joined appear once the background list finishes): ') + missing.map((n) => '#' + n).join(', ') }));
     }
   }
 
+  function pickRow(id, parts) {
+    const box = el('input', { type: 'checkbox' });
+    box.checked = chosen.has(id);
+    box.addEventListener('change', () => {
+      if (box.checked) chosen.add(id); else chosen.delete(id);
+      updateCount();
+    });
+    return el('label', { class: 'pick-row' }, [box].concat(parts));
+  }
+
   function render() {
     clear(list);
     const q = filter.value.trim().toLowerCase();
-    const shown = channels.filter((c) => !q || c.name.toLowerCase().includes(q));
-    if (!shown.length) {
+    const matches = (text) => !q || String(text || '').toLowerCase().includes(q);
+    const known = new Set(channels.map((c) => c.id));
+    // Selected IDs that are not in the list (a pasted DM ID, or a channel the list has
+    // not reached yet). Shown so they can still be seen and unticked.
+    const extra = loaded ? [...chosen].filter((id) => !known.has(id) && matches(id)) : [];
+    const shown = channels.filter((c) =>
+      (!onlySelected.checked || chosen.has(c.id)) &&
+      (matches(c.name) || matches(c.label) || matches(c.id)));
+    if (!shown.length && !extra.length) {
       list.appendChild(el('div', { class: 'empty', text: !loaded ? 'Loading channels…' : 'No channels match.' }));
       return;
     }
-    for (const c of shown) {
-      const box = el('input', { type: 'checkbox' });
-      box.checked = chosen.has(c.id);
-      box.addEventListener('change', () => {
-        if (box.checked) chosen.add(c.id); else chosen.delete(c.id);
-        count.textContent = chosen.size + ' selected';
-      });
-      list.appendChild(el('label', { class: 'pick-row' }, [
-        box,
-        el('span', { text: ' #' + c.name }),
-        c.is_private ? el('span', { class: 'muted', text: ' private' }) : null,
-        c.is_member === false ? el('span', { class: 'muted', text: ' not joined' }) : null,
+    for (const id of extra) {
+      list.appendChild(pickRow(id, [
+        el('span', { class: 'mono', text: ' ' + id }),
+        el('span', { class: 'muted', text: id.startsWith('D') ? ' direct message' : ' not in the list yet' }),
       ]));
     }
+    for (const c of shown) {
+      list.appendChild(pickRow(c.id, c.is_group_dm
+        ? [
+            el('span', { text: ' ' + (c.label || c.name) }),
+            el('span', { class: 'muted', text: ' group DM' }),
+          ]
+        : [
+            el('span', { text: ' #' + c.name }),
+            c.is_private ? el('span', { class: 'muted', text: ' private' }) : null,
+            c.is_member === false ? el('span', { class: 'muted', text: ' not joined' }) : null,
+          ]));
+    }
   }
+  onlySelected.addEventListener('change', render);
 
   function describeAge(d) {
     if (!d.fetched_at) return '';
@@ -560,7 +645,10 @@ function channelPicker() {
       bulk,
       el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Select these channels', onclick: selectPasted })]),
       bulkNote,
-      el('div', { class: 'row', style: 'margin-top:10px' }, [filter, count]),
+      el('div', { class: 'row', style: 'margin-top:10px' }, [
+        filter, count,
+        el('label', { class: 'remember', style: 'margin:0' }, [onlySelected, ' Show selected only']),
+      ]),
       el('div', { class: 'row', style: 'margin-top:6px' }, [refreshBtn, info]),
       fullNote,
       list,
@@ -592,6 +680,19 @@ function showCreatedKey(container, key) {
   ]));
 }
 function keyRow(k, refreshList) {
+  const editorBox = el('div');
+  const editBtn = el('button', {
+    class: 'secondary small', text: 'Edit access',
+    onclick: () => {
+      if (editorBox.firstChild) { clear(editorBox); editBtn.textContent = 'Edit access'; return; }
+      editBtn.textContent = 'Close';
+      editorBox.appendChild(keyEditor(k, (saved) => {
+        clear(editorBox);
+        editBtn.textContent = 'Edit access';
+        if (saved) refreshList();
+      }));
+    },
+  });
   return el('div', { class: 'item' }, [
     el('div', { class: 'row', style: 'justify-content:space-between' }, [
       el('div', {}, [
@@ -599,18 +700,23 @@ function keyRow(k, refreshList) {
         el('div', { class: 'meta' }, [
           el('span', { text: keyScopeText(k) }),
           el('span', { text: 'created ' + timeAgo(k.createdAt) }),
+          k.updatedAt ? el('span', { text: 'changed ' + timeAgo(k.updatedAt) }) : null,
           el('span', { text: k.lastUsedAt ? 'used ' + timeAgo(k.lastUsedAt) : 'never used' }),
         ]),
       ]),
-      el('button', {
-        class: 'danger small', text: 'Delete',
-        onclick: async () => {
-          if (!confirm('Delete key "' + k.label + '"? It is removed and any client using it stops working immediately.')) return;
-          await api('/api/keys/' + k.id, { method: 'DELETE' });
-          refreshList();
-        },
-      }),
+      el('div', { class: 'row' }, [
+        editBtn,
+        el('button', {
+          class: 'danger small', text: 'Delete',
+          onclick: async () => {
+            if (!confirm('Delete key "' + k.label + '"? It is removed and any client using it stops working immediately.')) return;
+            await api('/api/keys/' + k.id, { method: 'DELETE' });
+            refreshList();
+          },
+        }),
+      ]),
     ]),
+    editorBox,
   ]);
 }
 

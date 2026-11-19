@@ -23,6 +23,7 @@ let services;
 function buildApp() {
   services = {
     slackClient: {
+      currentUserName: 'me',
       authTest: async () => ({ team: 'TestTeam', user: 'me', user_id: 'U1', team_id: 'T1' }),
       testCredentials: async (c) => {
         if (c.token === 'xoxc-good' || c.botToken === 'xoxb-good') return { team: 'TestTeam', user: 'me' };
@@ -41,6 +42,9 @@ function buildApp() {
         channels: [
           { id: 'C0AAAAAAA1', name: 'general', is_private: false, is_archived: false, member_count: 4 },
           { id: 'C0BBBBBBB2', name: 'secret', is_private: true, is_archived: false, member_count: 2 },
+          // Group DMs come from the member list only: one renamed, one with Slack's default name.
+          { id: 'C0GDMRENAM', name: 'Project-Crew', is_group_dm: true, is_private: true },
+          { id: 'C0GDMDEFLT', name: 'mpdm-alice--me--bob-1', is_group_dm: true, is_private: true },
         ],
       }),
       // The saved full workspace list also holds a public channel the account has not joined.
@@ -247,10 +251,81 @@ describe('Dashboard API', () => {
       await agent.delete('/dashboard/api/keys/' + list.body.data.keys.find((k) => k.label === 'all-key').id);
     });
 
+    test('API key: edit changes access and channels, and the same secret keeps working', async () => {
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'edit-me', access: 'read', channels: ['C0AAAAAAA1'] });
+      const secret = created.body.data.key;
+      const id = created.body.data.meta.id;
+
+      const res = await agent.patch('/dashboard/api/keys/' + id)
+        .send({ access: 'read_write', channels: ['C0AAAAAAA1', 'C0GROUPDM9', 'C0GROUPDM9'] });
+      expect(res.status).toBe(200);
+      expect(res.body.data.meta.access).toBe('read_write');
+      expect(res.body.data.meta.readChannels).toEqual(['C0AAAAAAA1', 'C0GROUPDM9']);
+      expect(res.body.data.meta.updatedAt).toBeTruthy();
+
+      // The record the auth middleware returns for the unchanged secret has the new scope.
+      const rec = configStore.verifyApiKey(secret);
+      expect(rec.access).toBe('read_write');
+      expect(rec.readChannels).toEqual(['C0AAAAAAA1', 'C0GROUPDM9']);
+
+      // Saved to disk, so a restart keeps it.
+      const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'apikeys.json'), 'utf8'))
+        .find((k) => k.id === id);
+      expect(onDisk.readChannels).toEqual(['C0AAAAAAA1', 'C0GROUPDM9']);
+
+      // Narrowing back to read only works too.
+      const back = await agent.patch('/dashboard/api/keys/' + id).send({ access: 'read', channels: ['C0GROUPDM9'] });
+      expect(back.status).toBe(200);
+      expect(configStore.verifyApiKey(secret).access).toBe('read');
+      expect(configStore.verifyApiKey(secret).readChannels).toEqual(['C0GROUPDM9']);
+      await agent.delete('/dashboard/api/keys/' + id);
+    });
+
+    test('API key: edit refuses a bad scope, a missing access, and an unknown key', async () => {
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'edit-guard', access: 'read_write', channels: ['C0AAAAAAA1'] });
+      const id = created.body.data.meta.id;
+
+      const noAccess = await agent.patch('/dashboard/api/keys/' + id).send({ channels: ['C0AAAAAAA1'] });
+      expect(noAccess.status).toBe(400);
+      const empty = await agent.patch('/dashboard/api/keys/' + id).send({ access: 'read', channels: [] });
+      expect(empty.status).toBe(400);
+      const badId = await agent.patch('/dashboard/api/keys/' + id).send({ access: 'read', channels: ['general'] });
+      expect(badId.status).toBe(400);
+      const unknown = await agent.patch('/dashboard/api/keys/no-such-id').send({ access: 'read', channels: ['C0AAAAAAA1'] });
+      expect(unknown.status).toBe(404);
+
+      // Nothing changed on the refused edits.
+      const shown = (await agent.get('/dashboard/api/keys')).body.data.keys.find((k) => k.id === id);
+      expect(shown.access).toBe('read_write');
+      expect(shown.readChannels).toEqual(['C0AAAAAAA1']);
+      await agent.delete('/dashboard/api/keys/' + id);
+    });
+
+    test('API key: edit needs a dashboard session, an API key is not enough', async () => {
+      const created = await agent.post('/dashboard/api/keys').send({ label: 'edit-auth', channels: ['C0AAAAAAA1'] });
+      const res = await request(app).patch('/dashboard/api/keys/' + created.body.data.meta.id)
+        .set('X-API-Key', created.body.data.key)
+        .send({ access: 'read_write', channels: 'all' });
+      expect(res.status).toBe(401);
+      expect(configStore.verifyApiKey(created.body.data.key).readChannels).toEqual(['C0AAAAAAA1']);
+      await agent.delete('/dashboard/api/keys/' + created.body.data.meta.id);
+    });
+
+    test('channel picker lists channels, then group DMs labelled by their people', async () => {
+      const res = await agent.get('/dashboard/api/channels');
+      expect(res.status).toBe(200);
+      expect(res.body.data.channels.map((c) => c.label)).toEqual(['general', 'random', 'secret', 'alice, bob', 'Project-Crew']);
+      const renamed = res.body.data.channels.find((c) => c.id === 'C0GDMRENAM');
+      expect(renamed.is_group_dm).toBe(true);
+      expect(res.body.data.channels.find((c) => c.name === 'general').is_group_dm).toBe(false);
+    });
+
     test('channel picker lists channels only, for choosing key scope', async () => {
       const res = await agent.get('/dashboard/api/channels');
       expect(res.status).toBe(200);
-      expect(res.body.data.channels.map((c) => c.name)).toEqual(['general', 'random', 'secret']);
+      expect(res.body.data.channels.filter((c) => !c.is_group_dm).map((c) => c.name)).toEqual(['general', 'random', 'secret']);
+      // One-to-one DMs are never offered.
+      expect(res.body.data.channels.some((c) => c.id.startsWith('D'))).toBe(false);
       expect(res.body.data.channels.find((c) => c.name === 'secret').is_private).toBe(true);
       // Channels the account is in come first-class; others are marked as not joined.
       expect(res.body.data.channels.find((c) => c.name === 'general').is_member).toBe(true);
