@@ -346,7 +346,7 @@ async function viewKeys(root) {
   const scopeEditor = keyScopeForm(null);
 
   const create = async () => {
-    const r0 = scopeEditor.read();
+    const r0 = await scopeEditor.read();
     if (r0.error) {
       clear(created);
       created.appendChild(el('div', { class: 'notice err', text: r0.error }));
@@ -432,9 +432,14 @@ function keyScopeForm(initial) {
       el('label', { text: 'Which channels' }), scope,
       pickerBox,
     ]),
-    // What to send to the API, or an error to show.
-    read() {
+    // What to send to the API, or an error to show. Anything still in the paste box is
+    // ticked first, so pasting and then saving straight away works.
+    async read() {
       if (scope.value === 'all') return { body: { access: access.value, channels: 'all' } };
+      const missing = await picker.applyPasted();
+      if (missing.length) {
+        return { error: 'Not saved: some pasted entries were not found (' + missing.map((n) => '#' + n).join(', ') + '). Fix or remove them in the paste box, then save again.' };
+      }
       const ids = picker.selected();
       if (!ids.length) return { error: 'Select at least one channel, or choose "All channels".' };
       return { body: { access: access.value, channels: ids } };
@@ -449,7 +454,7 @@ function keyEditor(k, onDone) {
   const wasAll = k.readChannels === null || k.readChannels === undefined;
   const save = async () => {
     clear(msg);
-    const r = form.read();
+    const r = await form.read();
     if (r.error) { msg.appendChild(el('div', { class: 'notice err', text: r.error })); return; }
     if (r.body.channels === 'all' && !wasAll && !confirm(ALL_CHANNELS_WARNING)) return;
     saveBtn.disabled = true;
@@ -492,6 +497,12 @@ function channelPicker(initialIds) {
   const bulkNote = el('div', { class: 'muted', style: 'margin-top:6px' });
   const info = el('span', { class: 'muted' });
   const fullNote = el('div', { class: 'muted', style: 'margin-top:6px' });
+  // Shown when the workspace crawl hit its page limit. Only public channels the account
+  // has not joined can be missing: channels and group DMs it is in come from another list.
+  const truncNote = el('div', {
+    class: 'muted', style: 'display:none;margin-top:6px',
+    text: 'Some public channels you have not joined are not listed (the workspace has more than the proxy pages through). Channels and group DMs you are in are all here. You can still paste the ID of a missing channel.',
+  });
   let pollTimer = null;
   const refreshBtn = el('button', { class: 'secondary small', text: 'Refresh channels', onclick: () => refresh() });
 
@@ -506,29 +517,43 @@ function channelPicker(initialIds) {
       .filter(Boolean))];
   }
 
-  async function selectPasted() {
+  function describe(id) {
+    const c = channels.find((x) => x.id === id);
+    if (!c) return id;
+    return c.is_group_dm ? (c.label || c.name) + ' (group DM)' : '#' + c.name;
+  }
+
+  // Ticks what is typed in the paste box and returns the entries that matched nothing.
+  // Matched entries are removed from the box, so text left there always means "not
+  // added yet". Saving the key calls this too, so a paste is never silently dropped.
+  async function applyPasted() {
+    const tokens = parseTokens(bulk.value);
+    if (!tokens.length) return [];
     await load();
-    if (!loaded) return;
+    if (!loaded) return tokens;
     const byName = new Map();
     for (const c of channels) {
       byName.set(c.name.toLowerCase(), c.id);
       if (c.label) byName.set(c.label.toLowerCase(), c.id);
     }
-    const tokens = parseTokens(bulk.value);
+    const added = [];
     const missing = [];
-    let matched = 0;
     for (const token of tokens) {
       // A name wins over an ID-shaped token, then a pasted ID is taken as given.
       const id = byName.get(token.toLowerCase()) || (CONVERSATION_ID_RE.test(token) ? token : null);
-      if (id) { chosen.add(id); matched++; } else missing.push(token);
+      if (id) { chosen.add(id); added.push(describe(id)); } else missing.push(token);
     }
+    bulk.value = missing.join('\n');
     updateCount();
     render();
     clear(bulkNote);
-    bulkNote.appendChild(el('span', { text: 'Selected ' + matched + ' of ' + tokens.length + '.' }));
-    if (missing.length) {
-      bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px', text: (fullReady ? 'Not found (check spelling): ' : 'Not found yet (check spelling; channels you have not joined appear once the background list finishes): ') + missing.map((n) => '#' + n).join(', ') }));
+    if (added.length) {
+      bulkNote.appendChild(el('div', { class: 'notice ok', style: 'margin-top:6px;margin-bottom:0', text: 'Ticked: ' + added.join(', ') + '. Save to apply it to the key.' }));
     }
+    if (missing.length) {
+      bulkNote.appendChild(el('div', { class: 'notice err', style: 'margin-top:6px;margin-bottom:0', text: (fullReady ? 'Not found (check spelling): ' : 'Not found yet (check spelling; channels you have not joined appear once the background list finishes): ') + missing.map((n) => '#' + n).join(', ') }));
+    }
+    return missing;
   }
 
   function pickRow(id, parts) {
@@ -543,7 +568,8 @@ function channelPicker(initialIds) {
 
   function render() {
     clear(list);
-    const q = filter.value.trim().toLowerCase();
+    // A leading # is ignored, the same as in the paste box.
+    const q = filter.value.trim().replace(/^#/, '').toLowerCase();
     const matches = (text) => !q || String(text || '').toLowerCase().includes(q);
     const known = new Set(channels.map((c) => c.id));
     // Selected IDs that are not in the list (a pasted DM ID, or a channel the list has
@@ -593,12 +619,7 @@ function channelPicker(initialIds) {
     if (!fullReady) {
       fullNote.textContent = 'Showing the channels you are in. Public channels you have not joined are still being listed in the background (a few minutes). They appear here by themselves.';
     }
-    if (d.truncated) {
-      list.parentNode && list.parentNode.insertBefore(
-        el('div', { class: 'notice err', text: 'Slack returned more channels than the proxy can list. Some channels are missing; raise MAX_DIRECTORY_PAGINATION_CALLS.' }),
-        list
-      );
-    }
+    truncNote.style.display = d.truncated ? '' : 'none';
     schedulePoll();
   }
 
@@ -643,7 +664,7 @@ function channelPicker(initialIds) {
     node: el('div', {}, [
       el('label', { text: 'Paste channel names' }),
       bulk,
-      el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Select these channels', onclick: selectPasted })]),
+      el('div', { class: 'actions' }, [el('button', { class: 'secondary small', text: 'Select these channels', onclick: () => applyPasted() })]),
       bulkNote,
       el('div', { class: 'row', style: 'margin-top:10px' }, [
         filter, count,
@@ -651,9 +672,11 @@ function channelPicker(initialIds) {
       ]),
       el('div', { class: 'row', style: 'margin-top:6px' }, [refreshBtn, info]),
       fullNote,
+      truncNote,
       list,
     ]),
     load,
+    applyPasted,
     selected: () => [...chosen],
   };
 }
